@@ -1,5 +1,6 @@
 const {createClient}=window.supabase;
 const sb=createClient(window.BITHOUSE_SUPABASE_URL,window.BITHOUSE_SUPABASE_KEY);
+window.sb=sb;
 let user=null, profile=null, weekStart=monday(new Date()), channel=null;
 const $=s=>document.querySelector(s);
 const esc=s=>String(s??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[m]));
@@ -16,6 +17,7 @@ async function boot(){
 function showLogin(){$("#login").classList.remove("hidden");$("#app").classList.add("hidden")}
 async function enter(){
  $("#login").classList.add("hidden");$("#app").classList.remove("hidden");
+ window.user=user;
  let {data:p}=await sb.from("profiles").select("*").eq("id",user.id).single();
  if(!p){
    await sb.from("profiles").upsert({id:user.id,name:user.email?.split("@")[0]||"Membro"});
@@ -23,6 +25,7 @@ async function enter(){
  }
  profile=p;$("#userName").textContent=p?.name||user.email;
  subscribe();await refresh();
+if(window.loadProduction) window.loadProduction();
 }
 function subscribe(){
  if(channel)sb.removeChannel(channel);
