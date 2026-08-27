@@ -1,0 +1,25 @@
+/* Bithouse Production Board */
+.production-controls{display:flex;gap:8px;align-items:center}
+.production-controls select{border:2px solid #17294d;border-radius:20px;padding:8px 12px;background:#fff;font:800 12px Nunito;color:#17294d}
+.production-stats{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin:18px 0}
+.production-stats>div{background:#fff;border:1px solid #d9e1ef;border-radius:16px;padding:14px}
+.production-stats small{display:block;font-size:10px;letter-spacing:1.5px;font-weight:900;color:#72819b}
+.production-stats strong{display:block;font:800 27px "Space Grotesk";margin-top:5px}
+.production-map{margin-top:20px}
+.production-map-head{display:flex;justify-content:space-between;align-items:end;margin-bottom:10px}
+.production-map-head h3{font:700 22px "Space Grotesk";margin:4px 0 0}
+.production-count{font-size:11px;font-weight:900;color:#72819b}
+.production-cards{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.production-card{background:#fff;border:1px solid #d9e1ef;border-radius:18px;padding:15px}
+.production-card-top{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.production-pill{display:inline-block;padding:5px 8px;border-radius:9px;font-size:9px;font-weight:900}
+.production-pill.released{background:#e5f7f0;color:#26775b}
+.production-pill.blocked{background:#fff5d5;color:#8b6810}
+.production-pill.done{background:#e6f1ff;color:#315eae}
+.production-type{font-size:9px;font-weight:900;color:#8491a8}
+.production-card h4{font:700 17px "Space Grotesk";margin:12px 0 8px}
+.production-person,.production-time{font-size:11px;color:#687895;margin-top:5px}
+.production-dependency{margin-top:10px;background:#fff5d5;border-radius:10px;padding:8px;font-size:10px;font-weight:800;color:#80631b}
+.production-empty{background:#fff;border:1px dashed #cbd6e6;border-radius:18px;padding:28px;text-align:center;color:#75839d;font-weight:800}
+@media(max-width:850px){.production-stats{grid-template-columns:repeat(2,1fr)}.production-cards{grid-template-columns:1fr 1fr}}
+@media(max-width:600px){.production-controls{width:100%;flex-wrap:wrap}.production-controls select{flex:1}.production-stats,.production-cards{grid-template-columns:1fr}}
