@@ -1,26 +1,11 @@
 /* =========================================================
    BITHOUSE — APP CORE
-   Dashboard / Agenda / Comissões / Equipe
-
-   Estrutura preparada para:
-   - Agenda interativa
-   - Status
-   - Edição
-   - Detalhes
-   - Capacidade
-   - Realtime
-   - Activity Log
-   - Produção
-   - Futuros campos
+   Agenda / Comissões / Equipe / Realtime
+   Versão interativa e preparada para expansão
 ========================================================= */
 
 (function () {
-
   "use strict";
-
-  /* =======================================================
-     SUPABASE
-  ======================================================= */
 
   const { createClient } = window.supabase;
 
@@ -31,16 +16,9 @@
 
   window.sb = sb;
 
-
-  /* =======================================================
-     ESTADO GLOBAL
-  ======================================================= */
-
   let user = null;
   let profile = null;
-
   let weekStart = monday(new Date());
-
   let channel = null;
 
   let appData = {
@@ -50,50 +28,30 @@
     profiles: []
   };
 
-  let selectedCommission = null;
   let selectedAgendaItem = null;
+  let selectedCommission = null;
 
-
-  /* =======================================================
-     HELPERS
-  ======================================================= */
-
-  const $ = (selector) =>
-    document.querySelector(selector);
-
-
-  const $$ = (selector) =>
-    [...document.querySelectorAll(selector)];
-
+  const $ = (selector) => document.querySelector(selector);
+  const $$ = (selector) => [...document.querySelectorAll(selector)];
 
   const esc = (value) =>
-    String(value ?? "").replace(
-      /[&<>"']/g,
-      (char) => ({
-        "&": "&amp;",
-        "<": "&lt;",
-        ">": "&gt;",
-        '"': "&quot;",
-        "'": "&#039;"
-      }[char])
-    );
+    String(value ?? "").replace(/[&<>"']/g, (char) => ({
+      "&": "&amp;",
+      "<": "&lt;",
+      ">": "&gt;",
+      '"': "&quot;",
+      "'": "&#039;"
+    }[char]));
 
-
-  function normalize(value) {
-
-    return String(value || "")
+  const normalize = (value) =>
+    String(value || "")
       .normalize("NFD")
       .replace(/[\u0300-\u036f]/g, "")
       .toLowerCase()
       .trim();
 
-  }
-
-
   function monday(date) {
-
     const d = new Date(date);
-
     const day = d.getDay();
 
     d.setDate(
@@ -104,39 +62,26 @@
     d.setHours(12, 0, 0, 0);
 
     return d;
-
   }
-
 
   function add(date, days) {
-
     const d = new Date(date);
-
-    d.setDate(
-      d.getDate() + days
-    );
-
+    d.setDate(d.getDate() + days);
     return d;
-
   }
-
 
   function iso(date) {
-
     const d = new Date(date);
-
-    return d
-      .toISOString()
-      .slice(0, 10);
-
+    return d.toISOString().slice(0, 10);
   }
 
-
   function fmt(date) {
+    if (!date) return "—";
 
-    if (!date) {
-      return "—";
-    }
+    const value =
+      String(date).length === 10
+        ? date + "T12:00:00"
+        : date;
 
     return new Intl.DateTimeFormat(
       "pt-BR",
@@ -144,18 +89,11 @@
         day: "2-digit",
         month: "2-digit"
       }
-    ).format(
-      new Date(date)
-    );
-
+    ).format(new Date(value));
   }
 
-
   function fmtLong(date) {
-
-    if (!date) {
-      return "—";
-    }
+    if (!date) return "—";
 
     return new Intl.DateTimeFormat(
       "pt-BR",
@@ -167,200 +105,148 @@
     ).format(
       new Date(date + "T12:00:00")
     );
-
   }
 
-
-  function number(value) {
-
+  function num(value) {
     return Number(value || 0);
-
   }
-
 
   function hours(value) {
-
-    return number(value)
-      .toFixed(1);
-
+    return num(value).toFixed(1);
   }
 
-
-  function cap(profile) {
-
+  function capacity(p) {
     return (
-      number(profile?.hours_per_day) *
-      number(profile?.days_per_week) *
+      num(p?.hours_per_day) *
+      num(p?.days_per_week) *
       0.8
     );
-
   }
-
-
-  function dateInput(value) {
-
-    return value || "";
-
-  }
-
 
   /* =======================================================
      STATUS
   ======================================================= */
 
-  const STATUS = {
-
-    COMMISSION: [
-      "Planejamento",
-      "Em andamento",
-      "Concluído",
-      "Pausado",
-      "Cancelado"
-    ],
-
-    AGENDA: [
-      "Não inicializado",
-      "Em andamento",
-      "Concluído",
-      "Bloqueado"
-    ]
-
-  };
-
-
-  function statusClass(status) {
-
+  function normalizeAgendaStatus(status) {
     const s = normalize(status);
 
+    if (s === "concluido") {
+      return "Concluído";
+    }
+
+    if (s === "em andamento") {
+      return "Em andamento";
+    }
+
+    if (s === "bloqueado") {
+      return "Bloqueado";
+    }
+
     if (
-      s === "concluido"
+      s === "nao inicializado" ||
+      s === "nao iniciado" ||
+      s === "não inicializado" ||
+      s === "não iniciado"
     ) {
+      return "Não inicializado";
+    }
+
+    return "Não inicializado";
+  }
+
+  function statusClass(status) {
+    const s = normalize(status);
+
+    if (s === "concluido") {
       return "done";
     }
 
-    if (
-      s === "em andamento"
-    ) {
+    if (s === "em andamento") {
       return "progress";
     }
 
-    if (
-      s === "cancelado"
-    ) {
-      return "cancelled";
-    }
-
-    if (
-      s === "pausado"
-    ) {
-      return "paused";
-    }
-
-    if (
-      s === "bloqueado"
-    ) {
+    if (s === "bloqueado") {
       return "blocked";
     }
 
+    if (s === "cancelado") {
+      return "cancelled";
+    }
+
+    if (s === "pausado") {
+      return "paused";
+    }
+
     return "not-started";
-
   }
-
 
   function statusLabel(status) {
-
-    return status ||
-      "Não inicializado";
-
+    return status || "Não inicializado";
   }
 
+  function commissionStatusClass(status) {
+    return statusClass(status);
+  }
 
   /* =======================================================
-     AUTH
+     AUTENTICAÇÃO
   ======================================================= */
 
   async function boot() {
-
     try {
-
       const {
-        data: {
-          session
-        }
+        data: { session }
       } = await sb.auth.getSession();
 
       if (session) {
-
         user = session.user;
-
         await enter();
-
       } else {
-
         showLogin();
-
       }
 
       sb.auth.onAuthStateChange(
-        async (event, session) => {
-
+        async (_, session) => {
           if (session) {
-
             user = session.user;
-
             await enter();
-
           } else {
-
             user = null;
-
+            profile = null;
             showLogin();
-
           }
-
         }
       );
-
     } catch (error) {
-
       console.error(
         "Erro no boot:",
         error
       );
 
       showLogin();
-
     }
-
   }
-
 
   function showLogin() {
+    $("#login")?.classList.remove(
+      "hidden"
+    );
 
-    $("#login")
-      ?.classList
-      .remove("hidden");
-
-    $("#app")
-      ?.classList
-      .add("hidden");
-
+    $("#app")?.classList.add(
+      "hidden"
+    );
   }
 
-
   async function enter() {
+    $("#login")?.classList.add(
+      "hidden"
+    );
 
-    $("#login")
-      ?.classList
-      .add("hidden");
-
-    $("#app")
-      ?.classList
-      .remove("hidden");
-
+    $("#app")?.classList.remove(
+      "hidden"
+    );
 
     window.user = user;
-
 
     let {
       data: p,
@@ -371,29 +257,30 @@
       .eq("id", user.id)
       .maybeSingle();
 
-
     if (error) {
-
       console.error(
         "Erro ao buscar perfil:",
         error
       );
-
     }
 
-
     if (!p) {
+      const created =
+        await sb
+          .from("profiles")
+          .upsert({
+            id: user.id,
+            name:
+              user.email?.split("@")[0] ||
+              "Membro"
+          });
 
-      await sb
-        .from("profiles")
-        .upsert({
-          id: user.id,
-          name:
-            user.email
-              ?.split("@")[0] ||
-            "Membro"
-        });
-
+      if (created.error) {
+        console.error(
+          "Erro ao criar perfil:",
+          created.error
+        );
+      }
 
       const result =
         await sb
@@ -403,127 +290,99 @@
           .maybeSingle();
 
       p = result.data;
-
     }
 
-
     profile = p;
-
     window.profile = profile;
 
-
     if ($("#userName")) {
-
       $("#userName").textContent =
         p?.name ||
         user.email ||
         "Membro";
-
     }
 
-
-    ensureModals();
+    ensureDetailModal();
 
     subscribe();
 
     await refresh();
 
-
-    if (
-      window.loadProduction
-    ) {
-
+    if (window.loadProduction) {
       window.loadProduction();
-
     }
-
   }
-
 
   /* =======================================================
      REALTIME
   ======================================================= */
 
   function subscribe() {
-
     if (channel) {
-
       sb.removeChannel(channel);
-
     }
 
+    channel = sb
+      .channel("bithouse-live")
 
-    channel =
-      sb
-        .channel("bithouse-live")
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "commissions"
+        },
+        refresh
+      )
 
-        .on(
-          "postgres_changes",
-          {
-            event: "*",
-            schema: "public",
-            table: "commissions"
-          },
-          refresh
-        )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "agenda_items"
+        },
+        refresh
+      )
 
-        .on(
-          "postgres_changes",
-          {
-            event: "*",
-            schema: "public",
-            table: "agenda_items"
-          },
-          refresh
-        )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "tasks"
+        },
+        refresh
+      )
 
-        .on(
-          "postgres_changes",
-          {
-            event: "*",
-            schema: "public",
-            table: "tasks"
-          },
-          refresh
-        )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "profiles"
+        },
+        refresh
+      )
 
-        .on(
-          "postgres_changes",
-          {
-            event: "*",
-            schema: "public",
-            table: "profiles"
-          },
-          refresh
-        )
+      .subscribe((state) => {
+        const sync =
+          $("#syncState");
 
-        .subscribe(
-          (state) => {
+        if (!sync) return;
 
-            const sync =
-              $("#syncState");
-
-            if (!sync) {
-              return;
-            }
-
-            sync.textContent =
-              state === "SUBSCRIBED"
-                ? "● sincronizado"
-                : "● conectando...";
-
-          }
-        );
-
+        sync.textContent =
+          state === "SUBSCRIBED"
+            ? "● sincronizado"
+            : "● conectando...";
+      });
   }
 
-
   /* =======================================================
-     DATA
+     DADOS
   ======================================================= */
 
-  async function data() {
-
+  async function loadData() {
     const [
       commissionsResult,
       agendaResult,
@@ -553,9 +412,7 @@
         .from("agenda_items")
         .select(`
           *,
-          commission:commissions(
-            *
-          ),
+          commission:commissions(*),
           profile:profiles(
             id,
             name,
@@ -574,65 +431,46 @@
         .from("tasks")
         .select("*"),
 
+      /*
+       * NÃO usamos .eq("active", true)
+       * porque a sua tabela profiles
+       * pode não possuir essa coluna.
+       */
       sb
         .from("profiles")
         .select("*")
-        .eq("active", true)
         .order("name")
-
     ]);
 
-
-    if (
-      commissionsResult.error
-    ) {
-
+    if (commissionsResult.error) {
       console.error(
         "Comissões:",
         commissionsResult.error
       );
-
     }
 
-
-    if (
-      agendaResult.error
-    ) {
-
+    if (agendaResult.error) {
       console.error(
         "Agenda:",
         agendaResult.error
       );
-
     }
 
-
-    if (
-      tasksResult.error
-    ) {
-
+    if (tasksResult.error) {
       console.error(
         "Tasks:",
         tasksResult.error
       );
-
     }
 
-
-    if (
-      profilesResult.error
-    ) {
-
+    if (profilesResult.error) {
       console.error(
         "Profiles:",
         profilesResult.error
       );
-
     }
 
-
     return {
-
       commissions:
         commissionsResult.data || [],
 
@@ -644,109 +482,84 @@
 
       profiles:
         profilesResult.data || []
-
     };
-
   }
 
-
   async function refresh() {
-
-    if (!user) {
-      return;
-    }
-
+    if (!user) return;
 
     try {
-
       appData =
-        await data();
+        await loadData();
 
       render(appData);
-
     } catch (error) {
-
       console.error(
         "Erro ao atualizar:",
         error
       );
-
     }
-
   }
-
 
   /* =======================================================
      RENDER PRINCIPAL
   ======================================================= */
 
-  function render(d) {
-
-    renderStats(d);
-
-    renderAgenda(d);
-
-    renderCommissions(d);
-
-    renderTeam(d);
-
+  function render(data) {
+    renderStats(data);
+    renderAgenda(data);
+    renderCommissions(data);
+    renderTeam(data);
   }
 
-
-  /* =======================================================
-     DASHBOARD / STATS
-  ======================================================= */
-
-  function renderStats(d) {
-
+  function renderStats(data) {
     const active =
-      d.commissions.filter(
-        (x) =>
+      data.commissions.filter(
+        (c) =>
           ![
             "Concluído",
             "Cancelado"
-          ].includes(x.status)
+          ].includes(c.status)
       );
-
 
     const high =
       active.filter(
-        (x) =>
-          x.priority === "Alta"
+        (c) =>
+          c.priority === "Alta"
       );
 
-
     const pendingTasks =
-      d.tasks.filter(
-        (x) =>
-          normalize(x.status) !==
+      data.tasks.filter(
+        (t) =>
+          normalize(t.status) !==
           "concluido"
       );
 
-
     const owners =
-      d.commissions.filter(
-        (x) =>
-          x.owner_id
+      data.commissions.filter(
+        (c) => c.owner_id
       );
-
 
     const totalCapacity =
-      d.profiles.reduce(
-        (total, p) =>
-          total + cap(p),
+      data.profiles.reduce(
+        (sum, p) =>
+          sum + capacity(p),
         0
       );
-
 
     const committed =
-      d.agenda.reduce(
-        (total, item) =>
-          total +
-          number(item.hours),
-        0
-      );
-
+      data.agenda
+        .filter(
+          (item) =>
+            normalizeAgendaStatus(
+              item.status
+            ) !== "Concluído"
+        )
+        .reduce(
+          (sum, item) =>
+            sum + num(item.hours),
+          0
+        );
 
     const percentage =
       totalCapacity
@@ -757,62 +570,44 @@
           )
         : 0;
 
-
     if ($("#activeCount")) {
-
       $("#activeCount")
         .textContent =
         active.length;
-
     }
 
-
     if ($("#highCount")) {
-
       $("#highCount")
         .textContent =
         high.length;
-
     }
 
-
     if ($("#taskCount")) {
-
       $("#taskCount")
         .textContent =
         pendingTasks.length;
-
     }
 
-
     if ($("#ownerCount")) {
-
       $("#ownerCount")
         .textContent =
         owners.length;
-
     }
 
-
     if ($("#capacityPct")) {
-
       $("#capacityPct")
         .textContent =
         Math.round(
           percentage * 100
         ) + "%";
-
     }
-
 
     if ($("#capacityBar")) {
-
       $("#capacityBar")
         .style.width =
-        percentage * 100 + "%";
-
+        percentage * 100 +
+        "%";
     }
-
 
     const free =
       Math.max(
@@ -821,64 +616,54 @@
           committed
       );
 
-
     if ($("#committed")) {
-
       $("#committed")
         .textContent =
-        hours(committed) + "h";
-
+        hours(committed) +
+        "h";
     }
-
 
     if ($("#free")) {
-
       $("#free")
         .textContent =
-        hours(free) + "h";
-
+        hours(free) +
+        "h";
     }
-
 
     if ($("#freePreview")) {
-
       $("#freePreview")
         .textContent =
-        hours(free) + "h";
-
+        hours(free) +
+        "h";
     }
-
   }
-
 
   /* =======================================================
      AGENDA
   ======================================================= */
 
-  function renderAgenda(d) {
-
-    if (!$("#agendaGrid")) {
-      return;
-    }
-
-
-    if ($("#weekTitle")) {
-
-      $("#weekTitle")
-        .textContent =
-        `${fmt(weekStart)} — ${fmt(
-          add(weekStart, 5)
-        )}`;
-
-    }
-
-
+  function renderAgenda(data) {
     const grid =
       $("#agendaGrid");
 
+    if (!grid) return;
+
+    if ($("#weekTitle")) {
+      $("#weekTitle")
+        .textContent =
+        `${fmt(
+          iso(weekStart)
+        )} — ${fmt(
+          iso(
+            add(
+              weekStart,
+              5
+            )
+          )
+        )}`;
+    }
 
     grid.innerHTML = "";
-
 
     const dayNames = [
       "SEG",
@@ -889,60 +674,53 @@
       "SÁB"
     ];
 
-
     for (
       let i = 0;
       i < 6;
       i++
     ) {
-
       const date =
         add(
           weekStart,
           i
         );
 
-
       const key =
         iso(date);
 
-
       const items =
-        d.agenda.filter(
-          (item) =>
-            item.date === key
-        );
-
+        data.agenda
+          .filter(
+            (item) =>
+              item.date === key
+          )
+          .sort(
+            (a, b) =>
+              num(b.hours) -
+              num(a.hours)
+          );
 
       const day =
         document.createElement(
           "div"
         );
 
-
       day.className =
         "day";
 
-
       day.innerHTML = `
-
         <div class="day-head">
-
           <span>
             ${dayNames[i]}
           </span>
 
           <small>
-            ${fmt(date)}
+            ${fmt(key)}
           </small>
-
         </div>
-
       `;
 
-
       if (!items.length) {
-
         day.innerHTML += `
           <div
             class="muted"
@@ -951,171 +729,163 @@
             Dia livre ✨
           </div>
         `;
-
       }
-
 
       items.forEach(
         (item) => {
-
-          const element =
-            createAgendaItem(
-              item
+          const status =
+            normalizeAgendaStatus(
+              item.status
             );
 
-          day.appendChild(
-            element
+          const commission =
+            item.commission;
+
+          const person =
+            item.profile?.name ||
+            item.collaborator_name ||
+            "Equipe";
+
+          const el =
+            document.createElement(
+              "button"
+            );
+
+          el.type =
+            "button";
+
+          el.className =
+            `item agenda-item ${statusClass(
+              status
+            )}`;
+
+          el.innerHTML = `
+            <span
+              class="agenda-item-status"
+            >
+              ${esc(
+                statusLabel(
+                  status
+                )
+              )}
+            </span>
+
+            <b>
+              ${esc(
+                commission?.name ||
+                "Comissão"
+              )}
+            </b>
+
+            <small>
+              ${esc(person)}
+              •
+              ${esc(
+                item.task ||
+                "Produção"
+              )}
+            </small>
+
+            <small>
+              <strong>
+                ${hours(
+                  item.hours
+                )}h
+              </strong>
+
+              ${
+                item.updated_at
+                  ? " • atualizado"
+                  : ""
+              }
+            </small>
+          `;
+
+          el.addEventListener(
+            "click",
+            () =>
+              openAgendaDetails(
+                item.id
+              )
           );
 
+          day.appendChild(
+            el
+          );
         }
       );
-
 
       grid.appendChild(day);
-
     }
-
   }
-
-
-  function createAgendaItem(item) {
-
-    const element =
-      document.createElement(
-        "div"
-      );
-
-
-    element.className =
-      "item agenda-clickable";
-
-
-    const status =
-      item.status ||
-      "Não inicializado";
-
-
-    element.innerHTML = `
-
-      <div class="agenda-item-status">
-        <span
-          class="status-dot ${statusClass(status)}"
-        ></span>
-      </div>
-
-      <b>
-        ${esc(
-          item.commission?.name ||
-          "Comissão"
-        )}
-      </b>
-
-      <small>
-        ${esc(
-          item.profile?.name ||
-          item.collaborator_name ||
-          "Equipe"
-        )}
-        •
-        ${esc(
-          item.task ||
-          "Produção"
-        )}
-      </small>
-
-      <small>
-
-        <strong>
-          ${hours(item.hours)}h
-        </strong>
-
-        ${
-          item.start_time
-            ? ` • ${esc(
-                item.start_time
-              )}`
-            : ""
-        }
-
-      </small>
-
-    `;
-
-
-    element.addEventListener(
-      "click",
-      () =>
-        openAgendaDetails(
-          item
-        )
-    );
-
-
-    return element;
-
-  }
-
 
   /* =======================================================
      COMISSÕES
   ======================================================= */
 
-  function renderCommissions(d) {
-
+  function renderCommissions(data) {
     const grid =
       $("#commissionGrid");
 
-
-    if (!grid) {
-      return;
-    }
-
+    if (!grid) return;
 
     grid.innerHTML = "";
 
-
-    d.commissions.forEach(
+    data.commissions.forEach(
       (commission) => {
+        const items =
+          data.agenda.filter(
+            (item) =>
+              item.commission_id ===
+              commission.id
+          );
 
-        const total =
-          d.agenda
+        const totalHours =
+          items.reduce(
+            (sum, item) =>
+              sum +
+              num(item.hours),
+            0
+          );
+
+        const doneHours =
+          items
             .filter(
               (item) =>
-                item.commission_id ===
-                commission.id
+                normalizeAgendaStatus(
+                  item.status
+                ) ===
+                "Concluído"
             )
             .reduce(
-              (total, item) =>
-                total +
-                number(item.hours),
+              (sum, item) =>
+                sum +
+                num(item.hours),
               0
             );
 
+        const progress =
+          totalHours > 0
+            ? Math.min(
+                1,
+                doneHours /
+                  totalHours
+              )
+            : num(
+                commission.progress
+              );
 
-        const card =
+        const el =
           document.createElement(
             "article"
           );
 
+        el.className =
+          "card commission-card";
 
-        card.className =
-          "card commission-clickable";
+        el.tabIndex = 0;
 
-
-        const progress =
-          Math.min(
-            1,
-            Math.max(
-              0,
-              number(
-                commission.progress
-              )
-            )
-          );
-
-
-        card.innerHTML = `
-
+        el.innerHTML = `
           <span
             class="badge ${
               commission.priority ===
@@ -1126,13 +896,12 @@
           >
             ${esc(
               commission.priority ||
-              "Normal"
+              "Média"
             )}
           </span>
 
           <span
-            class="commission-status
-            ${statusClass(
+            class="commission-status ${commissionStatusClass(
               commission.status
             )}"
           >
@@ -1149,55 +918,49 @@
           </h3>
 
           <div class="muted">
-
             ${esc(
               commission.client ||
               "Cliente não informado"
             )}
-
           </div>
 
           <div class="bar">
-
             <span
               style="
                 width:${progress * 100}%
               "
             ></span>
-
           </div>
 
           <div class="meta">
 
             <div>
-
               <small>
                 Responsável
               </small>
 
               <b>
                 ${esc(
-                  commission.owner?.name ||
+                  commission.owner
+                    ?.name ||
                   "Sem responsável"
                 )}
               </b>
-
             </div>
 
             <div>
-
               <small>
-                Horas agendadas
+                Horas
               </small>
 
               <b>
-                ${hours(total)}h
+                ${hours(
+                  totalHours
+                )}h
               </b>
-
             </div>
 
             <div>
-
               <small>
                 Prazo
               </small>
@@ -1211,11 +974,9 @@
                     : "—"
                 }
               </b>
-
             </div>
 
             <div>
-
               <small>
                 Mapa
               </small>
@@ -1226,446 +987,417 @@
                   "—"
                 )}
               </b>
-
             </div>
 
           </div>
 
+          <div class="card-hint">
+            Clique para abrir detalhes →
+          </div>
         `;
 
-
-        card.addEventListener(
+        el.addEventListener(
           "click",
           () =>
             openCommissionDetails(
-              commission
+              commission.id
             )
         );
 
-
-        grid.appendChild(
-          card
-        );
-
+        grid.appendChild(el);
       }
     );
-
   }
-
 
   /* =======================================================
      EQUIPE
   ======================================================= */
 
-  function renderTeam(d) {
-
+  function renderTeam(data) {
     const grid =
       $("#teamGrid");
 
-
-    if (!grid) {
-      return;
-    }
-
+    if (!grid) return;
 
     grid.innerHTML = "";
 
-
-    d.profiles.forEach(
+    data.profiles.forEach(
       (p) => {
-
         const owned =
-          d.commissions.filter(
-            (commission) =>
-              commission.owner_id ===
+          data.commissions.filter(
+            (c) =>
+              c.owner_id ===
               p.id
           );
 
-
         const used =
-          d.agenda
+          data.agenda
             .filter(
               (item) =>
                 item.profile_id ===
-                p.id
+                  p.id &&
+                normalizeAgendaStatus(
+                  item.status
+                ) !==
+                  "Concluído"
             )
             .reduce(
-              (total, item) =>
-                total +
-                number(item.hours),
+              (sum, item) =>
+                sum +
+                num(item.hours),
               0
             );
 
-
-        const capacity =
-          cap(p);
-
+        const total =
+          capacity(p);
 
         const available =
           Math.max(
             0,
-            capacity - used
+            total - used
           );
 
-
-        const percentage =
-          capacity
+        const pct =
+          total
             ? Math.min(
                 1,
-                used / capacity
+                used / total
               )
             : 0;
 
+        const el =
+          document.createElement(
+            "article"
+          );
 
-        grid.innerHTML += `
+        el.className =
+          "card";
 
-          <article
-            class="card"
-          >
+        el.innerHTML = `
+          <h3>
+            ${esc(
+              p.name
+            )}
+          </h3>
 
-            <h3>
-              ${esc(p.name)}
-            </h3>
+          <div class="muted">
+            ${esc(
+              p.specialty ||
+              p.role ||
+              "Equipe"
+            )}
+          </div>
 
-            <div class="muted">
-
-              ${esc(
-                p.specialty ||
-                p.role ||
-                "Equipe"
-              )}
-
-            </div>
-
-            <div
-              style="
-                font:800 30px
+          <div
+            style="
+              font:
+                800 30px
                 'Space Grotesk';
-                margin-top:12px
+              margin-top:12px
+            "
+          >
+            ${hours(
+              available
+            )}h
+
+            <span class="muted">
+              livres
+            </span>
+          </div>
+
+          <div class="bar">
+            <span
+              style="
+                width:${pct * 100}%
               "
-            >
+            ></span>
+          </div>
 
-              ${hours(
-                available
-              )}h
-
-              <span
-                class="muted"
-              >
-                livres
-              </span>
-
-            </div>
-
-            <div class="bar">
-
-              <span
-                style="
-                  width:${
-                    percentage * 100
-                  }%
-                "
-              ></span>
-
-            </div>
-
-            <div class="muted">
-
-              ${owned.length}
-              comissão(ões) como
-              responsável
-
-              •
-
-              ${hours(used)}h
-              comprometidas
-
-            </div>
-
-          </article>
-
+          <div class="muted">
+            ${owned.length}
+            comissão(ões)
+            como responsável
+            •
+            ${hours(
+              used
+            )}h comprometidas
+          </div>
         `;
 
+        grid.appendChild(
+          el
+        );
       }
     );
-
   }
 
-
   /* =======================================================
-     MODAIS
+     MODAL DE DETALHES
   ======================================================= */
 
-  function ensureModals() {
-
-    ensureAgendaModal();
-
-    ensureCommissionModal();
-
-  }
-
-
-  function ensureAgendaModal() {
-
-    if (
-      $("#agendaDetailsModal")
-    ) {
+  function ensureDetailModal() {
+    if ($("#detailModal")) {
       return;
     }
 
-
-    const modal =
+    const backdrop =
       document.createElement(
         "div"
       );
 
+    backdrop.id =
+      "detailModal";
 
-    modal.id =
-      "agendaDetailsModal";
+    backdrop.className =
+      "modal-backdrop hidden";
 
-
-    modal.className =
-      "agenda-details-backdrop hidden";
-
-
-    modal.innerHTML = `
-
+    backdrop.innerHTML = `
       <div
-        class="agenda-details-modal"
+        class="
+          modal
+          detail-modal
+        "
       >
-
         <button
+          class="close"
+          id="detailClose"
           type="button"
-          class="agenda-details-close"
-          id="agendaDetailsClose"
         >
           ×
         </button>
 
         <div
-          id="agendaDetailsContent"
+          id="detailContent"
         ></div>
-
       </div>
-
     `;
 
-
     document.body.appendChild(
-      modal
+      backdrop
     );
 
-
-    $("#agendaDetailsClose")
-      .onclick =
-      closeAgendaDetails;
-
-
-    modal.addEventListener(
-      "click",
-      (event) => {
-
-        if (
-          event.target ===
-          modal
-        ) {
-
-          closeAgendaDetails();
-
-        }
-
-      }
-    );
-
-  }
-
-
-  function ensureCommissionModal() {
-
-    if (
-      $("#commissionDetailsModal")
-    ) {
-      return;
-    }
-
-
-    const modal =
-      document.createElement(
-        "div"
+    $("#detailClose")
+      .addEventListener(
+        "click",
+        closeDetailModal
       );
 
-
-    modal.id =
-      "commissionDetailsModal";
-
-
-    modal.className =
-      "agenda-details-backdrop hidden";
-
-
-    modal.innerHTML = `
-
-      <div
-        class="agenda-details-modal"
-      >
-
-        <button
-          type="button"
-          class="agenda-details-close"
-          id="commissionDetailsClose"
-        >
-          ×
-        </button>
-
-        <div
-          id="commissionDetailsContent"
-        ></div>
-
-      </div>
-
-    `;
-
-
-    document.body.appendChild(
-      modal
-    );
-
-
-    $("#commissionDetailsClose")
-      .onclick =
-      closeCommissionDetails;
-
-
-    modal.addEventListener(
+    backdrop.addEventListener(
       "click",
       (event) => {
-
         if (
           event.target ===
-          modal
+          backdrop
         ) {
-
-          closeCommissionDetails();
-
+          closeDetailModal();
         }
-
       }
     );
-
   }
 
+  function openDetailModal(
+    html
+  ) {
+    ensureDetailModal();
+
+    $("#detailContent")
+      .innerHTML = html;
+
+    $("#detailModal")
+      .classList.remove(
+        "hidden"
+      );
+  }
+
+  function closeDetailModal() {
+    $("#detailModal")
+      ?.classList.add(
+        "hidden"
+      );
+
+    selectedAgendaItem =
+      null;
+
+    selectedCommission =
+      null;
+  }
 
   /* =======================================================
-     AGENDA DETAILS
+     AGENDA — DETALHES
   ======================================================= */
 
   function openAgendaDetails(
-    item
+    id
   ) {
+    const item =
+      appData.agenda.find(
+        (agendaItem) =>
+          agendaItem.id === id
+      );
 
-    ensureAgendaModal();
-
+    if (!item) return;
 
     selectedAgendaItem =
       item;
 
-
-    const modal =
-      $("#agendaDetailsModal");
-
-
-    const content =
-      $("#agendaDetailsContent");
-
-
     const commission =
       item.commission;
 
+    const task =
+      item.task_id
+        ? appData.tasks.find(
+            (t) =>
+              t.id ===
+              item.task_id
+          )
+        : null;
 
     const status =
-      item.status ||
-      "Não inicializado";
+      normalizeAgendaStatus(
+        item.status
+      );
 
+    const people =
+      appData.profiles;
 
-    content.innerHTML = `
-
+    openDetailModal(`
       <span class="eyebrow">
         ITEM DA AGENDA
       </span>
 
       <h2>
         ${esc(
-          item.task ||
+          commission?.name ||
           "Produção"
         )}
       </h2>
 
       <div
-        class="
-          production-details-status-row
-        "
+        class="detail-subtitle"
       >
-
-        <span
-          class="
-            production-pill
-            ${statusClass(status)}
-          "
-        >
-          ${esc(
-            statusLabel(status)
-          )}
-        </span>
-
+        ${esc(
+          item.task ||
+          "Produção"
+        )}
       </div>
 
-
       <div
-        class="
-          production-details-section
-        "
+        class="detail-grid"
       >
 
-        <h3>
-          O que precisa ser feito
-        </h3>
+        <label>
+          Status
+
+          <select
+            id="detailAgendaStatus"
+          >
+            ${[
+              "Não inicializado",
+              "Em andamento",
+              "Concluído",
+              "Bloqueado"
+            ]
+              .map(
+                (s) => `
+                  <option
+                    value="${esc(s)}"
+                    ${
+                      s === status
+                        ? "selected"
+                        : ""
+                    }
+                  >
+                    ${esc(s)}
+                  </option>
+                `
+              )
+              .join("")}
+          </select>
+        </label>
+
+        <label>
+          Responsável
+
+          <select
+            id="detailAgendaProfile"
+          >
+            <option value="">
+              Equipe / não definido
+            </option>
+
+            ${people
+              .map(
+                (p) => `
+                  <option
+                    value="${esc(
+                      p.id
+                    )}"
+                    ${
+                      p.id ===
+                      item.profile_id
+                        ? "selected"
+                        : ""
+                    }
+                  >
+                    ${esc(
+                      p.name
+                    )}
+                  </option>
+                `
+              )
+              .join("")}
+          </select>
+        </label>
+
+        <label>
+          Data
+
+          <input
+            id="detailAgendaDate"
+            type="date"
+            value="${esc(
+              item.date || ""
+            )}"
+          >
+        </label>
+
+        <label>
+          Horas
+
+          <input
+            id="detailAgendaHours"
+            type="number"
+            min="0"
+            step="0.5"
+            value="${esc(
+              item.hours || 0
+            )}"
+          >
+        </label>
+
+        <label
+          class="full"
+        >
+          O que precisa fazer
+
+          <input
+            id="detailAgendaTask"
+            value="${esc(
+              item.task || ""
+            )}"
+            placeholder="
+              Descreva exatamente
+              o que precisa ser feito
+            "
+          >
+        </label>
 
         <div
-          class="production-detail-box"
+          class="
+            detail-box
+            full
+          "
         >
-
-          <strong>
-
-            ${esc(
-              item.task ||
-              "Produção"
-            )}
-
-          </strong>
-
-          <p>
-
-            ${esc(
-              item.description ||
-              item.notes ||
-              "Nenhuma instrução adicional foi cadastrada para este item."
-            )}
-
-          </p>
-
-        </div>
-
-      </div>
-
-
-      <div
-        class="
-          production-details-grid
-        "
-      >
-
-        <div>
-
           <small>
             COMISSÃO
           </small>
@@ -1677,716 +1409,259 @@
             )}
           </strong>
 
-        </div>
+          ${
+            commission?.client
+              ? `
+                <span>
+                  Cliente:
+                  ${esc(
+                    commission.client
+                  )}
+                </span>
+              `
+              : ""
+          }
 
+          ${
+            commission?.map_name
+              ? `
+                <span>
+                  Mapa:
+                  ${esc(
+                    commission.map_name
+                  )}
+                </span>
+              `
+              : ""
+          }
 
-        <div>
-
-          <small>
-            CLIENTE
-          </small>
-
-          <strong>
-            ${esc(
-              commission?.client ||
-              "—"
-            )}
-          </strong>
-
-        </div>
-
-
-        <div>
-
-          <small>
-            RESPONSÁVEL
-          </small>
-
-          <strong>
-            ${esc(
-              item.profile?.name ||
-              item.collaborator_name ||
-              "Equipe"
-            )}
-          </strong>
-
-        </div>
-
-
-        <div>
-
-          <small>
-            HORAS
-          </small>
-
-          <strong>
-            ${hours(item.hours)}h
-          </strong>
-
-        </div>
-
-
-        <div>
-
-          <small>
-            DATA
-          </small>
-
-          <strong>
-            ${fmtLong(item.date)}
-          </strong>
-
-        </div>
-
-
-        <div>
-
-          <small>
-            HORÁRIO
-          </small>
-
-          <strong>
-
-            ${
-              item.start_time
-                ? `${esc(
-                    item.start_time
-                  )} ${
-                    item.end_time
-                      ? `– ${esc(
-                          item.end_time
-                        )}`
-                      : ""
-                  }`
-                : "Não definido"
-            }
-
-          </strong>
-
-        </div>
-
-
-        <div>
-
-          <small>
-            PRAZO DA COMISSÃO
-          </small>
-
-          <strong>
-
-            ${
-              commission?.deadline
-                ? fmtLong(
+          ${
+            commission?.deadline
+              ? `
+                <span>
+                  Prazo:
+                  ${fmtLong(
                     commission.deadline
-                  )
-                : "—"
-            }
-
-          </strong>
-
+                  )}
+                </span>
+              `
+              : ""
+          }
         </div>
-
-
-        <div>
-
-          <small>
-            MAPA
-          </small>
-
-          <strong>
-            ${esc(
-              commission?.map_name ||
-              "—"
-            )}
-          </strong>
-
-        </div>
-
-      </div>
-
-
-      <div
-        class="
-          production-details-section
-        "
-      >
-
-        <h3>
-          Alterar status
-        </h3>
-
-
-        <div
-          class="
-            production-status-buttons
-          "
-        >
-
-          ${renderAgendaStatusButton(
-            item,
-            "Não inicializado"
-          )}
-
-          ${renderAgendaStatusButton(
-            item,
-            "Em andamento"
-          )}
-
-          ${renderAgendaStatusButton(
-            item,
-            "Concluído"
-          )}
-
-        </div>
-
-      </div>
-
-
-      <div
-        class="
-          production-details-section
-        "
-      >
-
-        <h3>
-          Ações
-        </h3>
-
-        <div
-          class="modal-actions"
-        >
-
-          <button
-            type="button"
-            id="agendaEditButton"
-            class="production-view-btn"
-          >
-            Editar item
-          </button>
-
-          <button
-            type="button"
-            id="agendaDeleteButton"
-            class="production-view-btn danger"
-          >
-            Remover
-          </button>
-
-        </div>
-
-      </div>
-
-    `;
-
-
-    $$("#agendaDetailsContent [data-agenda-status]")
-      .forEach(
-        (button) => {
-
-          button.addEventListener(
-            "click",
-            () =>
-              updateAgendaStatus(
-                item,
-                button.dataset.agendaStatus
-              )
-          );
-
-        }
-      );
-
-
-    $("#agendaEditButton")
-      ?.addEventListener(
-        "click",
-        () =>
-          openAgendaEditor(
-            item
-          )
-      );
-
-
-    $("#agendaDeleteButton")
-      ?.addEventListener(
-        "click",
-        () =>
-          deleteAgendaItem(
-            item
-          )
-      );
-
-
-    modal.classList.remove(
-      "hidden"
-    );
-
-  }
-
-
-  function renderAgendaStatusButton(
-    item,
-    status
-  ) {
-
-    const active =
-      normalize(
-        item.status
-      ) ===
-      normalize(status);
-
-
-    return `
-
-      <button
-        type="button"
-        class="
-          status-btn
-          ${active ? "active" : ""}
-        "
-        data-agenda-status="${esc(
-          status
-        )}"
-      >
 
         ${
-          status ===
-          "Não inicializado"
-            ? "⚪"
-            : status ===
-              "Em andamento"
-              ? "🔵"
-              : "✅"
+          task
+            ? `
+              <div
+                class="
+                  detail-box
+                  full
+                "
+              >
+                <small>
+                  TAREFA RELACIONADA
+                </small>
+
+                <strong>
+                  ${esc(
+                    task.title ||
+                    "Tarefa"
+                  )}
+                </strong>
+
+                <span>
+                  Status:
+                  ${esc(
+                    task.status ||
+                    "Pendente"
+                  )}
+                </span>
+
+                ${
+                  task.notes
+                    ? `
+                      <span>
+                        ${esc(
+                          task.notes
+                        )}
+                      </span>
+                    `
+                    : ""
+                }
+              </div>
+            `
+            : ""
         }
 
-        ${esc(status)}
+      </div>
 
-      </button>
+      <div
+        class="actions"
+      >
+        <button
+          class="ghost-btn"
+          id="detailCancel"
+          type="button"
+        >
+          Cancelar
+        </button>
 
-    `;
+        <button
+          class="primary-btn"
+          id="detailSave"
+          type="button"
+        >
+          Salvar alterações
+        </button>
+      </div>
+    `);
 
+    $("#detailCancel")
+      .onclick =
+      closeDetailModal;
+
+    $("#detailSave")
+      .onclick =
+      saveAgendaDetails;
   }
-
-
-  function closeAgendaDetails() {
-
-    $("#agendaDetailsModal")
-      ?.classList
-      .add("hidden");
-
-    selectedAgendaItem =
-      null;
-
-  }
-
 
   /* =======================================================
-     STATUS DA AGENDA
+     SALVAR AGENDA
   ======================================================= */
 
-  async function updateAgendaStatus(
-    item,
-    status
-  ) {
-
-    if (!item?.id) {
+  async function saveAgendaDetails() {
+    if (!selectedAgendaItem) {
       return;
     }
 
+    const item =
+      selectedAgendaItem;
 
-    const oldStatus =
-      item.status ||
-      "Não inicializado";
+    const payload = {
+      status:
+        $("#detailAgendaStatus")
+          .value,
 
+      profile_id:
+        $("#detailAgendaProfile")
+          .value ||
+        null,
+
+      date:
+        $("#detailAgendaDate")
+          .value,
+
+      hours:
+        num(
+          $("#detailAgendaHours")
+            .value
+        ),
+
+      task:
+        $("#detailAgendaTask")
+          .value
+          .trim()
+    };
 
     const button =
-      document.querySelector(
-        `[data-agenda-status="${CSS.escape(
-          status
-        )}"]`
-      );
-
+      $("#detailSave");
 
     if (button) {
-      button.disabled = true;
+      button.disabled =
+        true;
+
+      button.textContent =
+        "Salvando...";
     }
 
-
-    /*
-      O campo status precisa existir
-      em agenda_items.
-
-      Se ainda não existir, a operação
-      mostrará o erro do Supabase.
-    */
-
-    const {
-      error
-    } = await sb
-      .from("agenda_items")
-      .update({
-        status
-      })
-      .eq("id", item.id);
-
+    const { error } =
+      await sb
+        .from("agenda_items")
+        .update(payload)
+        .eq(
+          "id",
+          item.id
+        );
 
     if (error) {
-
       console.error(
         "Erro ao atualizar agenda:",
         error
       );
 
-
       alert(
-        "Não foi possível atualizar o status.\n\n" +
+        "Não foi possível salvar:\n\n" +
         error.message
       );
-
 
       if (button) {
-        button.disabled = false;
+        button.disabled =
+          false;
+
+        button.textContent =
+          "Salvar alterações";
       }
 
-
       return;
-
     }
-
-
-    await logActivity(
-      "updated_agenda_status",
-      "agenda_item",
-      item.id,
-      {
-        previous_status:
-          oldStatus,
-
-        new_status:
-          status
-      }
-    );
-
-
-    item.status =
-      status;
-
-
-    await refresh();
-
-
-    openAgendaDetails(
-      appData.agenda.find(
-        (x) =>
-          x.id === item.id
-      ) || item
-    );
-
-  }
-
-
-  /* =======================================================
-     EDITOR DA AGENDA
-  ======================================================= */
-
-  function openAgendaEditor(
-    item
-  ) {
-
-    const content =
-      $("#agendaDetailsContent");
-
-
-    content.innerHTML = `
-
-      <span class="eyebrow">
-        EDITAR AGENDA
-      </span>
-
-      <h2>
-        ${esc(
-          item.task ||
-          "Produção"
-        )}
-      </h2>
-
-
-      <form
-        id="agendaEditForm"
-      >
-
-        <label>
-          Tarefa
-
-          <input
-            id="editAgendaTask"
-            value="${esc(
-              item.task || ""
-            )}"
-            required
-          >
-
-        </label>
-
-
-        <label>
-          Descrição
-
-          <textarea
-            id="editAgendaDescription"
-            rows="4"
-          >${esc(
-            item.description ||
-            item.notes ||
-            ""
-          )}</textarea>
-
-        </label>
-
-
-        <label>
-          Data
-
-          <input
-            type="date"
-            id="editAgendaDate"
-            value="${dateInput(
-              item.date
-            )}"
-            required
-          >
-
-        </label>
-
-
-        <label>
-          Horas
-
-          <input
-            type="number"
-            id="editAgendaHours"
-            min="0"
-            step="0.1"
-            value="${number(
-              item.hours
-            )}"
-            required
-          >
-
-        </label>
-
-
-        <div class="modal-actions">
-
-          <button
-            type="submit"
-            class="production-view-btn"
-          >
-            Salvar alterações
-          </button>
-
-          <button
-            type="button"
-            id="agendaEditorCancel"
-            class="production-view-btn"
-          >
-            Cancelar
-          </button>
-
-        </div>
-
-      </form>
-
-    `;
-
-
-    $("#agendaEditForm")
-      ?.addEventListener(
-        "submit",
-        async (event) => {
-
-          event.preventDefault();
-
-          await saveAgendaEdit(
-            item
-          );
-
-        }
-      );
-
-
-    $("#agendaEditorCancel")
-      ?.addEventListener(
-        "click",
-        () =>
-          openAgendaDetails(
-            item
-          )
-      );
-
-  }
-
-
-  async function saveAgendaEdit(
-    item
-  ) {
-
-    const values = {
-
-      task:
-        $("#editAgendaTask")
-          ?.value
-          .trim(),
-
-      description:
-        $("#editAgendaDescription")
-          ?.value
-          .trim(),
-
-      date:
-        $("#editAgendaDate")
-          ?.value ||
-        null,
-
-      hours:
-        number(
-          $("#editAgendaHours")
-            ?.value
-        )
-
-    };
-
-
-    const {
-      error
-    } = await sb
-      .from("agenda_items")
-      .update(values)
-      .eq("id", item.id);
-
-
-    if (error) {
-
-      alert(
-        "Erro ao salvar:\n\n" +
-        error.message
-      );
-
-      return;
-
-    }
-
 
     await logActivity(
       "updated_agenda_item",
       "agenda_item",
       item.id,
-      values
+      payload
     );
 
-
-    closeAgendaDetails();
-
-    await refresh();
-
-  }
-
-
-  /* =======================================================
-     DELETE AGENDA
-  ======================================================= */
-
-  async function deleteAgendaItem(
-    item
-  ) {
-
-    const confirmed =
-      confirm(
-        "Remover este item da agenda?\n\n" +
-        "Essa ação não pode ser desfeita."
-      );
-
-
-    if (!confirmed) {
-      return;
-    }
-
-
-    const {
-      error
-    } = await sb
-      .from("agenda_items")
-      .delete()
-      .eq("id", item.id);
-
-
-    if (error) {
-
-      alert(
-        "Não foi possível remover.\n\n" +
-        error.message
-      );
-
-      return;
-
-    }
-
-
-    await logActivity(
-      "deleted_agenda_item",
-      "agenda_item",
-      item.id,
-      {
-        task:
-          item.task
-      }
-    );
-
-
-    closeAgendaDetails();
+    closeDetailModal();
 
     await refresh();
-
   }
 
-
   /* =======================================================
-     COMISSÃO DETAILS
+     COMISSÃO — DETALHES
   ======================================================= */
 
   function openCommissionDetails(
-    commission
+    id
   ) {
+    const commission =
+      appData.commissions.find(
+        (c) =>
+          c.id === id
+      );
 
-    ensureCommissionModal();
-
+    if (!commission) {
+      return;
+    }
 
     selectedCommission =
       commission;
 
-
-    const content =
-      $("#commissionDetailsContent");
-
-
-    const agenda =
+    const members =
       appData.agenda.filter(
         (item) =>
           item.commission_id ===
           commission.id
       );
 
-
-    const totalHours =
-      agenda.reduce(
-        (total, item) =>
-          total +
-          number(item.hours),
+    const total =
+      members.reduce(
+        (sum, item) =>
+          sum +
+          num(item.hours),
         0
       );
 
+    const completed =
+      members.filter(
+        (item) =>
+          normalizeAgendaStatus(
+            item.status
+          ) ===
+          "Concluído"
+      ).length;
 
-    content.innerHTML = `
-
+    openDetailModal(`
       <span class="eyebrow">
         COMISSÃO
       </span>
@@ -2397,493 +1672,101 @@
         )}
       </h2>
 
-
       <div
-        class="production-details-status-row"
-      >
-
-        <span
-          class="
-            production-pill
-            ${statusClass(
-              commission.status
-            )}
-          "
-        >
-          ${esc(
-            commission.status ||
-            "Planejamento"
-          )}
-        </span>
-
-        <span
-          class="
-            production-pill
-            ${
-              commission.priority ===
-              "Alta"
-                ? "blocked"
-                : "not-started"
-            }
-          "
-        >
-          ${esc(
-            commission.priority ||
-            "Normal"
-          )}
-        </span>
-
-      </div>
-
-
-      <div
-        class="
-          production-details-grid
-        "
-      >
-
-        <div>
-          <small>CLIENTE</small>
-          <strong>
-            ${esc(
-              commission.client ||
-              "—"
-            )}
-          </strong>
-        </div>
-
-
-        <div>
-          <small>RESPONSÁVEL</small>
-          <strong>
-            ${esc(
-              commission.owner?.name ||
-              "Sem responsável"
-            )}
-          </strong>
-        </div>
-
-
-        <div>
-          <small>INÍCIO</small>
-          <strong>
-            ${
-              commission.start_date
-                ? fmtLong(
-                    commission.start_date
-                  )
-                : "—"
-            }
-          </strong>
-        </div>
-
-
-        <div>
-          <small>PRAZO</small>
-          <strong>
-            ${
-              commission.deadline
-                ? fmtLong(
-                    commission.deadline
-                  )
-                : "—"
-            }
-          </strong>
-        </div>
-
-
-        <div>
-          <small>MAPA</small>
-          <strong>
-            ${esc(
-              commission.map_name ||
-              "—"
-            )}
-          </strong>
-        </div>
-
-
-        <div>
-          <small>HORAS</small>
-          <strong>
-            ${hours(totalHours)}h
-          </strong>
-        </div>
-
-      </div>
-
-
-      <div
-        class="
-          production-details-section
-        "
-      >
-
-        <h3>
-          Progresso
-        </h3>
-
-        <div class="bar">
-
-          <span
-            style="
-              width:${
-                number(
-                  commission.progress
-                ) * 100
-              }%
-            "
-          ></span>
-
-        </div>
-
-      </div>
-
-
-      <div
-        class="
-          production-details-section
-        "
-      >
-
-        <h3>
-          Agenda
-        </h3>
-
-        ${
-          agenda.length
-            ? agenda
-                .map(
-                  (item) => `
-                    <div
-                      class="
-                        production-detail-box
-                        agenda-row-clickable
-                      "
-                      data-agenda-id="${
-                        item.id
-                      }"
-                    >
-
-                      <strong>
-                        ${esc(
-                          item.task ||
-                          "Produção"
-                        )}
-                      </strong>
-
-                      <p>
-
-                        ${fmt(
-                          item.date
-                        )}
-
-                        •
-
-                        ${esc(
-                          item.profile?.name ||
-                          "Equipe"
-                        )}
-
-                        •
-
-                        ${hours(
-                          item.hours
-                        )}h
-
-                      </p>
-
-                    </div>
-                  `
-                )
-                .join("")
-            : `
-              <div
-                class="production-detail-box"
-              >
-                Nenhum item agendado.
-              </div>
-            `
-        }
-
-      </div>
-
-
-      <div
-        class="
-          production-details-section
-        "
-      >
-
-        <h3>
-          Alterar status
-        </h3>
-
-
-        <select
-          id="commissionStatusEdit"
-          class="production-status-select"
-        >
-
-          ${STATUS.COMMISSION
-            .map(
-              (status) => `
-                <option
-                  value="${esc(
-                    status
-                  )}"
-                  ${
-                    normalize(
-                      commission.status
-                    ) ===
-                    normalize(status)
-                      ? "selected"
-                      : ""
-                  }
-                >
-                  ${esc(status)}
-                </option>
-              `
-            )
-            .join("")}
-
-        </select>
-
-      </div>
-
-
-      <div
-        class="
-          production-details-section
-        "
-      >
-
-        <div
-          class="modal-actions"
-        >
-
-          <button
-            type="button"
-            id="editCommissionButton"
-            class="production-view-btn"
-          >
-            Editar comissão
-          </button>
-
-          <button
-            type="button"
-            id="deleteCommissionButton"
-            class="production-view-btn danger"
-          >
-            Excluir comissão
-          </button>
-
-        </div>
-
-      </div>
-
-    `;
-
-
-    $$("#commissionDetailsContent [data-agenda-id]")
-      .forEach(
-        (row) => {
-
-          row.addEventListener(
-            "click",
-            () => {
-
-              const item =
-                appData.agenda.find(
-                  (x) =>
-                    String(x.id) ===
-                    String(
-                      row.dataset.agendaId
-                    )
-                );
-
-              if (item) {
-
-                closeCommissionDetails();
-
-                openAgendaDetails(
-                  item
-                );
-
-              }
-
-            }
-          );
-
-        }
-      );
-
-
-    $("#commissionStatusEdit")
-      ?.addEventListener(
-        "change",
-        async (event) => {
-
-          await updateCommission(
-            commission.id,
-            {
-              status:
-                event.target.value
-            }
-          );
-
-        }
-      );
-
-
-    $("#editCommissionButton")
-      ?.addEventListener(
-        "click",
-        () =>
-          openCommissionEditor(
-            commission
-          )
-      );
-
-
-    $("#deleteCommissionButton")
-      ?.addEventListener(
-        "click",
-        () =>
-          deleteCommission(
-            commission
-          )
-      );
-
-
-    $("#commissionDetailsModal")
-      .classList
-      .remove("hidden");
-
-  }
-
-
-  function closeCommissionDetails() {
-
-    $("#commissionDetailsModal")
-      ?.classList
-      .add("hidden");
-
-    selectedCommission =
-      null;
-
-  }
-
-
-  /* =======================================================
-     EDITAR COMISSÃO
-  ======================================================= */
-
-  function openCommissionEditor(
-    commission
-  ) {
-
-    const content =
-      $("#commissionDetailsContent");
-
-
-    content.innerHTML = `
-
-      <span class="eyebrow">
-        EDITAR COMISSÃO
-      </span>
-
-      <h2>
-        ${esc(
-          commission.name
-        )}
-      </h2>
-
-
-      <form
-        id="commissionEditForm"
+        class="detail-grid"
       >
 
         <label>
           Nome
 
           <input
-            id="editCommissionName"
+            id="detailCommissionName"
             value="${esc(
               commission.name
             )}"
-            required
           >
-
         </label>
-
 
         <label>
           Cliente
 
           <input
-            id="editCommissionClient"
+            id="detailCommissionClient"
             value="${esc(
               commission.client ||
               ""
             )}"
           >
-
         </label>
 
+        <label>
+          Status
+
+          <select
+            id="detailCommissionStatus"
+          >
+            ${[
+              "Planejamento",
+              "Em andamento",
+              "Concluído",
+              "Pausado",
+              "Cancelado"
+            ]
+              .map(
+                (s) => `
+                  <option
+                    value="${esc(s)}"
+                    ${
+                      s ===
+                      commission.status
+                        ? "selected"
+                        : ""
+                    }
+                  >
+                    ${esc(s)}
+                  </option>
+                `
+              )
+              .join("")}
+          </select>
+        </label>
 
         <label>
           Prioridade
 
           <select
-            id="editCommissionPriority"
+            id="detailCommissionPriority"
           >
-
-            <option
-              ${
-                commission.priority ===
-                "Baixa"
-                  ? "selected"
-                  : ""
-              }
-            >
-              Baixa
-            </option>
-
-            <option
-              ${
-                commission.priority ===
-                "Normal"
-                  ? "selected"
-                  : ""
-              }
-            >
-              Normal
-            </option>
-
-            <option
-              ${
-                commission.priority ===
-                "Alta"
-                  ? "selected"
-                  : ""
-              }
-            >
-              Alta
-            </option>
-
+            ${[
+              "Alta",
+              "Média",
+              "Baixa"
+            ]
+              .map(
+                (s) => `
+                  <option
+                    value="${esc(s)}"
+                    ${
+                      s ===
+                      commission.priority
+                        ? "selected"
+                        : ""
+                    }
+                  >
+                    ${esc(s)}
+                  </option>
+                `
+              )
+              .join("")}
           </select>
-
         </label>
-
 
         <label>
           Responsável
 
           <select
-            id="editCommissionOwner"
+            id="detailCommissionOwner"
           >
-
             <option value="">
               Sem responsável
             </option>
@@ -2892,7 +1775,9 @@
               .map(
                 (p) => `
                   <option
-                    value="${esc(p.id)}"
+                    value="${esc(
+                      p.id
+                    )}"
                     ${
                       p.id ===
                       commission.owner_id
@@ -2900,889 +1785,304 @@
                         : ""
                     }
                   >
-                    ${esc(p.name)}
+                    ${esc(
+                      p.name
+                    )}
                   </option>
                 `
               )
               .join("")}
-
           </select>
-
         </label>
 
-
         <label>
-          Início
+          Mapa / lote
 
           <input
-            type="date"
-            id="editCommissionStart"
-            value="${esc(
-              commission.start_date ||
-              ""
-            )}"
-          >
-
-        </label>
-
-
-        <label>
-          Prazo
-
-          <input
-            type="date"
-            id="editCommissionDeadline"
-            value="${esc(
-              commission.deadline ||
-              ""
-            )}"
-          >
-
-        </label>
-
-
-        <label>
-          Mapa
-
-          <input
-            id="editCommissionMap"
+            id="detailCommissionMap"
             value="${esc(
               commission.map_name ||
               ""
             )}"
           >
-
         </label>
 
+        <label>
+          Início
+
+          <input
+            id="detailCommissionStart"
+            type="date"
+            value="${esc(
+              commission.start_date ||
+              ""
+            )}"
+          >
+        </label>
+
+        <label>
+          Prazo
+
+          <input
+            id="detailCommissionDeadline"
+            type="date"
+            value="${esc(
+              commission.deadline ||
+              ""
+            )}"
+          >
+        </label>
 
         <label>
           Progresso
 
           <input
+            id="detailCommissionProgress"
             type="number"
-            id="editCommissionProgress"
             min="0"
-            max="1"
-            step="0.01"
-            value="${number(
-              commission.progress
+            max="100"
+            step="1"
+            value="${Math.round(
+              num(
+                commission.progress
+              ) * 100
             )}"
           >
-
         </label>
 
+        <label
+          class="full"
+        >
+          Observações
 
-        <div class="modal-actions">
+          <textarea
+            id="detailCommissionNotes"
+            rows="5"
+            placeholder="
+              Notas, referências,
+              regras do cliente,
+              dependências...
+            "
+          >${esc(
+            commission.notes ||
+            ""
+          )}</textarea>
+        </label>
 
-          <button
-            type="submit"
-            class="production-view-btn"
-          >
-            Salvar
-          </button>
+        <div
+          class="
+            detail-box
+            full
+          "
+        >
+          <small>
+            RESUMO DE PRODUÇÃO
+          </small>
 
-          <button
-            type="button"
-            id="commissionEditCancel"
-            class="production-view-btn"
-          >
-            Cancelar
-          </button>
+          <strong>
+            ${hours(
+              total
+            )}h agendadas
+          </strong>
 
+          <span>
+            ${completed}
+            item(ns)
+            concluído(s)
+          </span>
+
+          <span>
+            ${members.length}
+            item(ns)
+            na agenda
+          </span>
         </div>
 
-      </form>
+      </div>
 
-    `;
+      <div
+        class="actions"
+      >
+        <button
+          class="ghost-btn"
+          id="detailCancel"
+          type="button"
+        >
+          Cancelar
+        </button>
 
+        <button
+          class="primary-btn"
+          id="detailSave"
+          type="button"
+        >
+          Salvar comissão
+        </button>
+      </div>
+    `);
 
-    $("#commissionEditForm")
-      ?.addEventListener(
-        "submit",
-        async (event) => {
+    $("#detailCancel")
+      .onclick =
+      closeDetailModal;
 
-          event.preventDefault();
-
-          await saveCommissionEdit(
-            commission
-          );
-
-        }
-      );
-
-
-    $("#commissionEditCancel")
-      ?.addEventListener(
-        "click",
-        () =>
-          openCommissionDetails(
-            commission
-          )
-      );
-
+    $("#detailSave")
+      .onclick =
+      saveCommissionDetails;
   }
 
+  /* =======================================================
+     SALVAR COMISSÃO
+  ======================================================= */
 
-  async function saveCommissionEdit(
-    commission
-  ) {
+  async function saveCommissionDetails() {
+    if (!selectedCommission) {
+      return;
+    }
 
-    const values = {
+    const c =
+      selectedCommission;
 
+    const percentage =
+      Math.max(
+        0,
+        Math.min(
+          100,
+          num(
+            $("#detailCommissionProgress")
+              .value
+          )
+        )
+      );
+
+    const payload = {
       name:
-        $("#editCommissionName")
-          ?.value
+        $("#detailCommissionName")
+          .value
           .trim(),
 
       client:
-        $("#editCommissionClient")
-          ?.value
-          .trim(),
+        $("#detailCommissionClient")
+          .value
+          .trim() ||
+        null,
+
+      status:
+        $("#detailCommissionStatus")
+          .value,
 
       priority:
-        $("#editCommissionPriority")
-          ?.value,
+        $("#detailCommissionPriority")
+          .value,
 
       owner_id:
-        $("#editCommissionOwner")
-          ?.value ||
-        null,
-
-      start_date:
-        $("#editCommissionStart")
-          ?.value ||
-        null,
-
-      deadline:
-        $("#editCommissionDeadline")
-          ?.value ||
+        $("#detailCommissionOwner")
+          .value ||
         null,
 
       map_name:
-        $("#editCommissionMap")
-          ?.value
-          .trim(),
+        $("#detailCommissionMap")
+          .value
+          .trim() ||
+        null,
+
+      start_date:
+        $("#detailCommissionStart")
+          .value ||
+        null,
+
+      deadline:
+        $("#detailCommissionDeadline")
+          .value ||
+        null,
 
       progress:
-        number(
-          $("#editCommissionProgress")
-            ?.value
-        )
+        percentage / 100,
 
+      notes:
+        $("#detailCommissionNotes")
+          .value
+          .trim() ||
+        null
     };
 
+    const button =
+      $("#detailSave");
 
-    await updateCommission(
-      commission.id,
-      values
-    );
+    if (button) {
+      button.disabled =
+        true;
 
-  }
+      button.textContent =
+        "Salvando...";
+    }
 
-
-  async function updateCommission(
-    id,
-    values
-  ) {
-
-    const {
-      error
-    } = await sb
-      .from("commissions")
-      .update(values)
-      .eq("id", id);
-
+    const { error } =
+      await sb
+        .from("commissions")
+        .update(payload)
+        .eq(
+          "id",
+          c.id
+        );
 
     if (error) {
-
       console.error(
         "Erro ao atualizar comissão:",
         error
       );
 
-
       alert(
-        "Não foi possível salvar.\n\n" +
+        "Não foi possível salvar:\n\n" +
         error.message
       );
-
-
-      return false;
-
-    }
-
-
-    await logActivity(
-      "updated_commission",
-      "commission",
-      id,
-      values
-    );
-
-
-    await refresh();
-
-
-    const updated =
-      appData.commissions.find(
-        (x) =>
-          x.id === id
-      );
-
-
-    if (updated) {
-
-      openCommissionDetails(
-        updated
-      );
-
-    }
-
-
-    return true;
-
-  }
-
-
-  /* =======================================================
-     EXCLUIR COMISSÃO
-  ======================================================= */
-
-  async function deleteCommission(
-    commission
-  ) {
-
-    const confirmed =
-      confirm(
-        `Excluir a comissão "${commission.name}"?\n\n` +
-        "Os itens da agenda relacionados também precisam ser tratados."
-      );
-
-
-    if (!confirmed) {
-      return;
-    }
-
-
-    /*
-      Primeiro removemos agenda.
-    */
-
-    const {
-      error:
-        agendaError
-    } = await sb
-      .from("agenda_items")
-      .delete()
-      .eq(
-        "commission_id",
-        commission.id
-      );
-
-
-    if (agendaError) {
-
-      alert(
-        "Não foi possível remover os itens da agenda.\n\n" +
-        agendaError.message
-      );
-
-      return;
-
-    }
-
-
-    const {
-      error
-    } = await sb
-      .from("commissions")
-      .delete()
-      .eq(
-        "id",
-        commission.id
-      );
-
-
-    if (error) {
-
-      alert(
-        "Não foi possível excluir a comissão.\n\n" +
-        error.message
-      );
-
-      return;
-
-    }
-
-
-    await logActivity(
-      "deleted_commission",
-      "commission",
-      commission.id,
-      {
-        name:
-          commission.name
-      }
-    );
-
-
-    closeCommissionDetails();
-
-    await refresh();
-
-  }
-
-
-  /* =======================================================
-     NOVA COMISSÃO
-  ======================================================= */
-
-  function openModal() {
-
-    const modal =
-      $("#modal");
-
-    if (!modal) {
-      return;
-    }
-
-
-    modal
-      .classList
-      .remove("hidden");
-
-
-    if ($("#start")) {
-
-      $("#start").value ||=
-        iso(
-          new Date()
-        );
-
-    }
-
-
-    preview();
-
-  }
-
-
-  function closeModal() {
-
-    $("#modal")
-      ?.classList
-      .add("hidden");
-
-  }
-
-
-  function preview() {
-
-    const ids = [
-      "hs",
-      "hm",
-      "hb"
-    ];
-
-
-    const total =
-      ids.reduce(
-        (sum, id) =>
-          sum +
-          number(
-            $("#" + id)?.value
-          ),
-        0
-      );
-
-
-    if ($("#total")) {
-
-      $("#total")
-        .textContent =
-        hours(total) +
-        "h";
-
-    }
-
-
-    if ($("#verdict")) {
-
-      $("#verdict")
-        .textContent =
-        total
-          ? "A agenda será montada por pessoa."
-          : "Preencha as horas.";
-
-    }
-
-  }
-
-
-  /* =======================================================
-     CRIAR COMISSÃO
-  ======================================================= */
-
-  async function createCommission(
-    event
-  ) {
-
-    event.preventDefault();
-
-
-    const button =
-      event.submitter;
-
-
-    if (button) {
-      button.disabled = true;
-      button.textContent =
-        "Criando...";
-    }
-
-
-    try {
-
-      const values = {
-
-        name:
-          $("#name")
-            ?.value
-            .trim(),
-
-        client:
-          $("#client")
-            ?.value
-            .trim(),
-
-        priority:
-          $("#priority")
-            ?.value ||
-          "Normal",
-
-        status:
-          "Planejamento",
-
-        owner_id:
-          null,
-
-        start_date:
-          $("#start")
-            ?.value ||
-          null,
-
-        deadline:
-          $("#deadline")
-            ?.value ||
-          null,
-
-        map_name:
-          $("#map")
-            ?.value
-            .trim(),
-
-        progress:
-          0,
-
-        created_by:
-          user.id
-
-      };
-
-
-      const ownerName =
-        $("#owner")
-          ?.value;
-
-
-      if (ownerName) {
-
-        const {
-          data: owner
-        } = await sb
-          .from("profiles")
-          .select("id")
-          .eq(
-            "name",
-            ownerName
-          )
-          .maybeSingle();
-
-
-        values.owner_id =
-          owner?.id ||
-          null;
-
-      }
-
-
-      const {
-        data: commission,
-        error
-      } = await sb
-        .from("commissions")
-        .insert(values)
-        .select()
-        .single();
-
-
-      if (error) {
-
-        throw error;
-
-      }
-
-
-      const people = {
-
-        Selenne:
-          number(
-            $("#hs")
-              ?.value
-          ),
-
-        Midas:
-          number(
-            $("#hm")
-              ?.value
-          ),
-
-        Biell:
-          number(
-            $("#hb")
-              ?.value
-          )
-
-      };
-
-
-      await generateAgenda(
-        commission,
-        people
-      );
-
-
-      await logActivity(
-        "created_commission",
-        "commission",
-        commission.id,
-        {
-          hours:
-            people
-        }
-      );
-
-
-      closeModal();
-
-
-      $("#form")
-        ?.reset();
-
-
-      await refresh();
-
-
-      location.hash =
-        "#agenda";
-
-
-    } catch (error) {
-
-      console.error(
-        "Erro ao criar comissão:",
-        error
-      );
-
-
-      alert(
-        "Não foi possível criar a comissão.\n\n" +
-        error.message
-      );
-
-
-    } finally {
 
       if (button) {
-
         button.disabled =
           false;
 
         button.textContent =
-          "Criar comissão";
-
+          "Salvar comissão";
       }
 
-    }
-
-  }
-
-
-  /* =======================================================
-     GERADOR DE AGENDA
-  ======================================================= */
-
-  async function generateAgenda(
-    commission,
-    people
-  ) {
-
-    const names =
-      Object.keys(
-        people
-      );
-
-
-    if (!names.length) {
       return;
     }
 
-
-    const {
-      data: profiles
-    } = await sb
-      .from("profiles")
-      .select(
-        "id,name,hours_per_day,days_per_week"
-      )
-      .in(
-        "name",
-        names
-      );
-
-
-    const rows = [];
-
-
-    for (
-      const p of
-      profiles || []
-    ) {
-
-      let remaining =
-        number(
-          people[p.name]
-        );
-
-
-      if (!remaining) {
-        continue;
-      }
-
-
-      let day =
-        new Date(
-          (
-            commission.start_date ||
-            iso(new Date())
-          ) +
-          "T12:00:00"
-        );
-
-
-      let guard = 0;
-
-
-      while (
-        remaining > 0 &&
-        guard < 365
-      ) {
-
-        /*
-          Domingo = dia 0.
-        */
-
-        if (
-          day.getDay() !== 0
-        ) {
-
-          const dailyCapacity =
-            number(
-              p.hours_per_day
-            ) * 0.8;
-
-
-          const {
-            data: existing
-          } = await sb
-            .from("agenda_items")
-            .select("hours")
-            .eq(
-              "profile_id",
-              p.id
-            )
-            .eq(
-              "date",
-              iso(day)
-            );
-
-
-          const used =
-            (
-              existing ||
-              []
-            ).reduce(
-              (total, item) =>
-                total +
-                number(
-                  item.hours
-                ),
-              0
-            );
-
-
-          const room =
-            Math.max(
-              0,
-              dailyCapacity -
-              used
-            );
-
-
-          const put =
-            Math.min(
-              remaining,
-              room
-            );
-
-
-          if (put > 0) {
-
-            rows.push({
-
-              commission_id:
-                commission.id,
-
-              profile_id:
-                p.id,
-
-              date:
-                iso(day),
-
-              task:
-                "Produção",
-
-              description:
-                "",
-
-              hours:
-                put,
-
-              status:
-                "Não inicializado"
-
-            });
-
-
-            remaining -=
-              put;
-
-          }
-
-        }
-
-
-        day =
-          add(
-            day,
-            1
-          );
-
-
-        guard++;
-
-      }
-
-    }
-
-
-    if (rows.length) {
-
-      const {
-        error
-      } = await sb
-        .from("agenda_items")
-        .insert(rows);
-
-
-      if (error) {
-
-        /*
-          Caso a coluna status ainda
-          não exista, tenta novamente
-          sem ela.
-
-          Isso deixa o sistema compatível
-          durante a migração do banco.
-        */
-
-        if (
-          normalize(
-            error.message
-          ).includes(
-            "status"
-          )
-        ) {
-
-          const fallback =
-            rows.map(
-              ({
-                status,
-                ...row
-              }) =>
-                row
-            );
-
-
-          const retry =
-            await sb
-              .from("agenda_items")
-              .insert(
-                fallback
-              );
-
-
-          if (retry.error) {
-            throw retry.error;
-          }
-
-        } else {
-
-          throw error;
-
-        }
-
-      }
-
-    }
-
+    await logActivity(
+      "updated_commission",
+      "commission",
+      c.id,
+      payload
+    );
+
+    closeDetailModal();
+
+    await refresh();
   }
 
-
   /* =======================================================
-     ACTIVITY LOG
+     ATIVIDADE
   ======================================================= */
 
   async function logActivity(
     action,
     entityType,
     entityId,
-    details = {}
+    details
   ) {
-
     if (!user) {
       return;
     }
 
-
-    try {
-
+    const { error } =
       await sb
         .from("activity_log")
         .insert({
-
-          actor_id:
-            user.id,
+          /*
+           * IMPORTANTE:
+           * Sua tabela usa "actor",
+           * não "actor_id".
+           */
+          actor: user.id,
 
           action,
 
@@ -3792,100 +2092,457 @@
           entity_id:
             entityId,
 
-          details
-
+          /*
+           * Sua tabela usa "metadata",
+           * não "details".
+           */
+          metadata:
+            details || {}
         });
 
-    } catch (error) {
-
-      /*
-        Activity log nunca deve
-        impedir a operação principal.
-      */
-
+    if (error) {
       console.warn(
         "Activity log:",
         error
       );
+    }
+  }
 
+  /* =======================================================
+     NOVA COMISSÃO
+  ======================================================= */
+
+  function openNewCommission() {
+    $("#modal")
+      ?.classList.remove(
+        "hidden"
+      );
+
+    if (
+      $("#start") &&
+      !$("#start").value
+    ) {
+      $("#start").value =
+        iso(new Date());
     }
 
+    fillOwnerOptions();
+
+    preview();
   }
 
+  function fillOwnerOptions() {
+    const select =
+      $("#owner");
+
+    if (!select) {
+      return;
+    }
+
+    const current =
+      select.value;
+
+    select.innerHTML = `
+      <option value="">
+        Selecionar
+      </option>
+
+      ${appData.profiles
+        .map(
+          (p) => `
+            <option
+              value="${esc(
+                p.name
+              )}"
+            >
+              ${esc(
+                p.name
+              )}
+            </option>
+          `
+        )
+        .join("")}
+    `;
+
+    if (current) {
+      select.value =
+        current;
+    }
+  }
+
+  function closeNewCommission() {
+    $("#modal")
+      ?.classList.add(
+        "hidden"
+      );
+  }
+
+  function preview() {
+    const total =
+      [
+        "hs",
+        "hm",
+        "hb"
+      ].reduce(
+        (sum, id) =>
+          sum +
+          num(
+            $("#" + id)
+              ?.value
+          ),
+        0
+      );
+
+    if ($("#total")) {
+      $("#total")
+        .textContent =
+        hours(total) +
+        "h";
+    }
+
+    const currentCommitted =
+      appData.agenda.reduce(
+        (sum, item) =>
+          sum +
+          num(item.hours),
+        0
+      );
+
+    const totalCapacity =
+      appData.profiles.reduce(
+        (sum, p) =>
+          sum +
+          capacity(p),
+        0
+      );
+
+    const free =
+      Math.max(
+        0,
+        totalCapacity -
+          currentCommitted -
+          total
+      );
+
+    if ($("#freePreview")) {
+      $("#freePreview")
+        .textContent =
+        hours(free) +
+        "h";
+    }
+
+    if ($("#verdict")) {
+      $("#verdict")
+        .textContent =
+        total
+          ? "A agenda será montada por pessoa."
+          : "Preencha as horas";
+    }
+  }
 
   /* =======================================================
-     NAVEGAÇÃO DA SEMANA
+     CRIAR COMISSÃO
   ======================================================= */
 
-  function previousWeek() {
+  async function createCommission(
+    event
+  ) {
+    event.preventDefault();
 
-    weekStart =
-      add(
-        weekStart,
-        -7
+    if (!user) {
+      return;
+    }
+
+    const payload = {
+      name:
+        $("#name")
+          .value
+          .trim(),
+
+      client:
+        $("#client")
+          .value
+          .trim() ||
+        null,
+
+      priority:
+        $("#priority")
+          .value,
+
+      status:
+        "Planejamento",
+
+      progress:
+        0,
+
+      owner_id:
+        null,
+
+      start_date:
+        $("#start")
+          .value ||
+        null,
+
+      deadline:
+        $("#deadline")
+          .value ||
+        null,
+
+      map_name:
+        $("#map")
+          .value
+          .trim() ||
+        null,
+
+      notes:
+        null,
+
+      created_by:
+        user.id
+    };
+
+    const ownerName =
+      $("#owner").value;
+
+    if (ownerName) {
+      const owner =
+        appData.profiles.find(
+          (p) =>
+            p.name ===
+            ownerName
+        );
+
+      payload.owner_id =
+        owner?.id ||
+        null;
+    }
+
+    const saveButton =
+      $("#form button[type='submit']");
+
+    if (saveButton) {
+      saveButton.disabled =
+        true;
+
+      saveButton.textContent =
+        "Salvando...";
+    }
+
+    const {
+      data: commission,
+      error
+    } = await sb
+      .from("commissions")
+      .insert(payload)
+      .select()
+      .single();
+
+    if (error) {
+      alert(
+        error.message
       );
 
-    refresh();
+      if (saveButton) {
+        saveButton.disabled =
+          false;
 
-  }
+        saveButton.textContent =
+          "Salvar + montar agenda";
+      }
 
+      return;
+    }
 
-  function nextWeek() {
+    const people = {
+      Selenne:
+        num(
+          $("#hs").value
+        ),
 
-    weekStart =
-      add(
-        weekStart,
-        7
+      Midas:
+        num(
+          $("#hm").value
+        ),
+
+      Biell:
+        num(
+          $("#hb").value
+        )
+    };
+
+    const names =
+      Object.keys(
+        people
+      ).filter(
+        (name) =>
+          people[name] > 0
       );
 
-    refresh();
-
-  }
-
-
-  function currentWeek() {
-
-    weekStart =
-      monday(
-        new Date()
+    const profiles =
+      appData.profiles.filter(
+        (p) =>
+          names.includes(
+            p.name
+          )
       );
 
-    refresh();
+    const rows = [];
 
-  }
+    for (
+      const p of profiles
+    ) {
+      let remaining =
+        people[p.name];
 
+      let day =
+        new Date(
+          (
+            payload.start_date ||
+            iso(new Date())
+          ) +
+          "T12:00:00"
+        );
 
-  /* =======================================================
-     KEYBOARD
-  ======================================================= */
+      let guard = 0;
 
-  function keyboard() {
+      while (
+        remaining > 0 &&
+        guard < 365
+      ) {
+        const weekday =
+          day.getDay();
 
-    document.addEventListener(
-      "keydown",
-      (event) => {
+        /*
+         * Domingo = 0.
+         */
+        if (weekday !== 0) {
+          const dailyCapacity =
+            num(
+              p.hours_per_day
+            ) * 0.8;
 
-        if (
-          event.key ===
-          "Escape"
-        ) {
+          const date =
+            iso(day);
 
-          closeAgendaDetails();
+          const existingResult =
+            await sb
+              .from(
+                "agenda_items"
+              )
+              .select("hours")
+              .eq(
+                "profile_id",
+                p.id
+              )
+              .eq(
+                "date",
+                date
+              );
 
-          closeCommissionDetails();
+          const existing =
+            existingResult.data ||
+            [];
 
-          closeModal();
+          const used =
+            existing.reduce(
+              (sum, item) =>
+                sum +
+                num(item.hours),
+              0
+            );
 
+          const room =
+            Math.max(
+              0,
+              dailyCapacity -
+                used
+            );
+
+          const put =
+            Math.min(
+              remaining,
+              room
+            );
+
+          if (put > 0) {
+            rows.push({
+              commission_id:
+                commission.id,
+
+              profile_id:
+                p.id,
+
+              date,
+
+              task:
+                "Produção",
+
+              hours:
+                put,
+
+              status:
+                "Não inicializado"
+            });
+
+            remaining -= put;
+          }
         }
 
+        day =
+          add(
+            day,
+            1
+          );
+
+        guard++;
+      }
+    }
+
+    if (rows.length) {
+      const agendaInsert =
+        await sb
+          .from(
+            "agenda_items"
+          )
+          .insert(rows);
+
+      if (agendaInsert.error) {
+        console.error(
+          "Erro ao montar agenda:",
+          agendaInsert.error
+        );
+      }
+    }
+
+    await logActivity(
+      "created_commission",
+      "commission",
+      commission.id,
+      {
+        hours: people
       }
     );
 
+    closeNewCommission();
+
+    $("#form").reset();
+
+    await refresh();
+
+    location.hash =
+      "#agenda";
+
+    if (saveButton) {
+      saveButton.disabled =
+        false;
+
+      saveButton.textContent =
+        "Salvar + montar agenda";
+    }
   }
 
-
   /* =======================================================
-     EVENTS
+     EVENTOS
   ======================================================= */
 
   function bindEvents() {
@@ -3893,30 +2550,26 @@
     $("#newBtn")
       ?.addEventListener(
         "click",
-        openModal
+        openNewCommission
       );
-
 
     $("#newBtn2")
       ?.addEventListener(
         "click",
-        openModal
+        openNewCommission
       );
-
 
     $("#close")
       ?.addEventListener(
         "click",
-        closeModal
+        closeNewCommission
       );
-
 
     $("#cancel")
       ?.addEventListener(
         "click",
-        closeModal
+        closeNewCommission
       );
-
 
     [
       "hs",
@@ -3924,16 +2577,13 @@
       "hb"
     ].forEach(
       (id) => {
-
         $("#" + id)
           ?.addEventListener(
             "input",
             preview
           );
-
       }
     );
-
 
     $("#form")
       ?.addEventListener(
@@ -3941,34 +2591,52 @@
         createCommission
       );
 
-
     $("#prev")
       ?.addEventListener(
         "click",
-        previousWeek
-      );
+        async () => {
+          weekStart =
+            add(
+              weekStart,
+              -7
+            );
 
+          await refresh();
+        }
+      );
 
     $("#next")
       ?.addEventListener(
         "click",
-        nextWeek
-      );
+        async () => {
+          weekStart =
+            add(
+              weekStart,
+              7
+            );
 
+          await refresh();
+        }
+      );
 
     $("#today")
       ?.addEventListener(
         "click",
-        currentWeek
-      );
+        async () => {
+          weekStart =
+            monday(
+              new Date()
+            );
 
+          await refresh();
+        }
+      );
 
     $("#loginBtn")
       ?.addEventListener(
         "click",
         login
       );
-
 
     $("#logoutBtn")
       ?.addEventListener(
@@ -3977,114 +2645,1761 @@
           sb.auth.signOut()
       );
 
+    $("#modal")
+      ?.addEventListener(
+        "click",
+        (event) => {
+          if (
+            event.target ===
+            $("#modal")
+          ) {
+            closeNewCommission();
+          }
+        }
+      );
 
-    keyboard();
-
+    document.addEventListener(
+      "keydown",
+      (event) => {
+        if (
+          event.key ===
+          "Escape"
+        ) {
+          closeDetailModal();
+          closeNewCommission();
+        }
+      }
+    );
   }
-
 
   /* =======================================================
      LOGIN
   ======================================================= */
 
   async function login() {
-
     const email =
       $("#loginEmail")
         ?.value
         .trim();
 
-
     if (!email) {
       return;
     }
 
-
-    const {
-      error
-    } = await sb.auth
-      .signInWithOtp({
-
+    const { error } =
+      await sb.auth.signInWithOtp({
         email,
 
         options: {
           emailRedirectTo:
             location.href
         }
-
       });
 
-
     if ($("#loginMsg")) {
-
       $("#loginMsg")
         .textContent =
         error
           ? error.message
           : "Link enviado! Verifique seu e-mail.";
-
     }
-
   }
 
-
   /* =======================================================
-     INIT
+     INICIALIZAÇÃO
   ======================================================= */
 
   function init() {
-
     bindEvents();
-
     boot();
-
   }
-
 
   if (
     document.readyState ===
     "loading"
   ) {
-
     document.addEventListener(
       "DOMContentLoaded",
       init
     );
-
   } else {
-
     init();
-
   }
 
+  window.refreshBithouse =
+    refresh;
 
-  /* =======================================================
-     API GLOBAL
-  ======================================================= */
+  window.openAgendaDetails =
+    openAgendaDetails;
 
-  window.bithouse = {
+  window.openCommissionDetails =
+    openCommissionDetails;
 
-    refresh,
+})();
 
-    openAgendaDetails,
+/* =========================================================
+   BITHOUSE — PRODUCTION BOARD
+   Fila de Assets / Etapas / Status / Dependências
+========================================================= */
 
-    openCommissionDetails,
+(function () {
+  "use strict";
 
-    closeAgendaDetails,
+  const $ = (selector) =>
+    document.querySelector(selector);
 
-    closeCommissionDetails,
+  const esc = (value) =>
+    String(value ?? "").replace(
+      /[&<>"']/g,
+      (char) => ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#039;"
+      }[char])
+    );
 
-    openModal,
+  const normalize = (value) =>
+    String(value || "")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+      .trim();
 
-    closeModal,
+  const isDone = (status) =>
+    normalize(status) === "concluido";
 
-    previousWeek,
+  const isProgress = (status) =>
+    normalize(status) === "em andamento";
 
-    nextWeek,
+  const isNotStarted = (status) =>
+    normalize(status) === "nao inicializado";
 
-    currentWeek
+  const isBlocked = (status) =>
+    normalize(status) === "bloqueado";
 
+  const statusClass = (status) => {
+    const value = normalize(status);
+
+    if (value === "concluido") {
+      return "done";
+    }
+
+    if (value === "em andamento") {
+      return "progress";
+    }
+
+    if (value === "bloqueado") {
+      return "blocked";
+    }
+
+    return "not-started";
   };
 
+  const statusLabel = (status) => {
+    if (isDone(status)) {
+      return "CONCLUÍDA";
+    }
+
+    if (isProgress(status)) {
+      return "EM ANDAMENTO";
+    }
+
+    if (isBlocked(status)) {
+      return "BLOQUEADA";
+    }
+
+    return "NÃO INICIALIZADA";
+  };
+
+  const formatDate = (date) => {
+    if (!date) {
+      return "—";
+    }
+
+    return new Intl.DateTimeFormat(
+      "pt-BR",
+      {
+        day: "2-digit",
+        month: "2-digit"
+      }
+    ).format(
+      new Date(
+        date + "T12:00:00"
+      )
+    );
+  };
+
+  let steps = [];
+  let profiles = [];
+
+  /* =======================================================
+     DEPENDÊNCIA
+  ======================================================= */
+
+  function getDependency(step) {
+    if (!step?.depends_on_step_id) {
+      return null;
+    }
+
+    return steps.find(
+      (item) =>
+        item.id ===
+        step.depends_on_step_id
+    );
+  }
+
+  function dependencyCompleted(step) {
+    const dependency =
+      getDependency(step);
+
+    if (!dependency) {
+      return true;
+    }
+
+    return isDone(
+      dependency.status
+    );
+  }
+
+  function isReleased(step) {
+    if (!step?.depends_on_step_id) {
+      return true;
+    }
+
+    return dependencyCompleted(
+      step
+    );
+  }
+
+  function getState(step) {
+    const status =
+      normalize(
+        step.status
+      );
+
+    /*
+     * Concluído sempre vence
+     */
+    if (
+      status ===
+      "concluido"
+    ) {
+      return [
+        "CONCLUÍDA",
+        "done"
+      ];
+    }
+
+    /*
+     * Se tiver dependência
+     * não concluída, fica bloqueada.
+     */
+    if (
+      step.depends_on_step_id &&
+      !dependencyCompleted(step)
+    ) {
+      return [
+        "BLOQUEADA",
+        "blocked"
+      ];
+    }
+
+    if (
+      status ===
+      "em andamento"
+    ) {
+      return [
+        "EM ANDAMENTO",
+        "progress"
+      ];
+    }
+
+    return [
+      "NÃO INICIALIZADA",
+      "not-started"
+    ];
+  }
+
+  /* =======================================================
+     CARREGAR PRODUÇÃO
+  ======================================================= */
+
+  async function loadProduction() {
+    if (
+      !window.sb ||
+      !window.user
+    ) {
+      return;
+    }
+
+    const { data, error } =
+      await window.sb
+        .from("asset_steps")
+        .select(`
+          id,
+          asset_id,
+          step_type,
+          status,
+          assigned_to,
+          depends_on_step_id,
+          planned_date,
+          planned_start,
+          planned_end,
+          assets!inner(*)
+        `)
+        .order(
+          "planned_date",
+          {
+            ascending: true,
+            nullsFirst: false
+          }
+        )
+        .order(
+          "planned_start",
+          {
+            ascending: true,
+            nullsFirst: false
+          }
+        );
+
+    if (error) {
+      console.error(
+        "Erro ao carregar produção:",
+        error
+      );
+
+      showProductionError(
+        error
+      );
+
+      return;
+    }
+
+    steps =
+      data || [];
+
+    const profileIds = [
+      ...new Set(
+        steps
+          .map(
+            (step) =>
+              step.assigned_to
+          )
+          .filter(Boolean)
+      )
+    ];
+
+    profiles = [];
+
+    if (
+      profileIds.length
+    ) {
+      const result =
+        await window.sb
+          .from("profiles")
+          .select(
+            "id,name,specialty,role"
+          )
+          .in(
+            "id",
+            profileIds
+          );
+
+      if (
+        result.error
+      ) {
+        console.error(
+          "Erro ao carregar responsáveis:",
+          result.error
+        );
+      } else {
+        profiles =
+          result.data ||
+          [];
+      }
+    }
+
+    const profileMap =
+      new Map(
+        profiles.map(
+          (profile) => [
+            profile.id,
+            profile
+          ]
+        )
+      );
+
+    steps.forEach(
+      (step) => {
+        step._profile =
+          profileMap.get(
+            step.assigned_to
+          );
+      }
+    );
+
+    buildMapFilter();
+    renderProduction();
+  }
+
+  function showProductionError(
+    error
+  ) {
+    const grid =
+      $("#productionGrid");
+
+    if (!grid) {
+      return;
+    }
+
+    grid.innerHTML = `
+      <div
+        class="production-empty"
+      >
+        <strong>
+          Erro ao carregar produção.
+        </strong>
+
+        <small>
+          ${esc(
+            error?.message ||
+            "Erro desconhecido."
+          )}
+        </small>
+      </div>
+    `;
+  }
+
+  /* =======================================================
+     FILTRO DE MAPAS
+  ======================================================= */
+
+  function buildMapFilter() {
+    const select =
+      $("#productionFilter");
+
+    if (!select) {
+      return;
+    }
+
+    const current =
+      select.value ||
+      "TODAS";
+
+    const mapIds = [
+      ...new Set(
+        steps
+          .map(
+            (step) =>
+              step.assets?.map_id
+          )
+          .filter(Boolean)
+      )
+    ];
+
+    select.innerHTML = `
+      <option value="TODAS">
+        Todos os mapas
+      </option>
+    `;
+
+    mapIds.forEach(
+      (mapId) => {
+        const mapSteps =
+          steps.filter(
+            (step) =>
+              step.assets
+                ?.map_id ===
+              mapId
+          );
+
+        const mapName =
+          mapSteps
+            .map(
+              (step) =>
+                step.assets
+                  ?.map_name
+            )
+            .find(Boolean) ||
+          mapId;
+
+        select.innerHTML += `
+          <option
+            value="${esc(
+              mapId
+            )}"
+          >
+            ${esc(
+              mapName
+            )}
+          </option>
+        `;
+      }
+    );
+
+    if (
+      [
+        ...select.options
+      ].some(
+        (option) =>
+          option.value ===
+          current
+      )
+    ) {
+      select.value =
+        current;
+    }
+  }
+
+  /* =======================================================
+     RENDER
+  ======================================================= */
+
+  function renderProduction() {
+    const filter =
+      $("#productionFilter")
+        ?.value ||
+      "TODAS";
+
+    const visible =
+      steps.filter(
+        (step) =>
+          filter === "TODAS" ||
+          step.assets
+            ?.map_id ===
+          filter
+      );
+
+    const total =
+      visible.length;
+
+    const completed =
+      visible.filter(
+        (step) =>
+          isDone(
+            step.status
+          )
+      ).length;
+
+    const blocked =
+      visible.filter(
+        (step) =>
+          getState(
+            step
+          )[1] ===
+          "blocked"
+      ).length;
+
+    const released =
+      visible.filter(
+        (step) =>
+          !isDone(
+            step.status
+          ) &&
+          getState(
+            step
+          )[1] !==
+          "blocked"
+      ).length;
+
+    const mine =
+      visible.filter(
+        (step) =>
+          step.assigned_to ===
+          window.user?.id &&
+          !isDone(
+            step.status
+          )
+      ).length;
+
+    setText(
+      "#productionTotal",
+      total
+    );
+
+    setText(
+      "#productionReleased",
+      released
+    );
+
+    setText(
+      "#productionBlocked",
+      blocked
+    );
+
+    setText(
+      "#productionCompleted",
+      completed
+    );
+
+    setText(
+      "#myProductionCount",
+      mine
+    );
+
+    const grid =
+      $("#productionGrid");
+
+    if (!grid) {
+      return;
+    }
+
+    grid.innerHTML = "";
+
+    if (!visible.length) {
+      grid.innerHTML = `
+        <div
+          class="production-empty"
+        >
+          Nenhuma etapa encontrada.
+        </div>
+      `;
+
+      return;
+    }
+
+    const groups =
+      new Map();
+
+    visible.forEach(
+      (step) => {
+        const key =
+          step.assets
+            ?.map_id ||
+          "SEM_MAPA";
+
+        if (
+          !groups.has(
+            key
+          )
+        ) {
+          groups.set(
+            key,
+            []
+          );
+        }
+
+        groups
+          .get(key)
+          .push(step);
+      }
+    );
+
+    groups.forEach(
+      (mapSteps) => {
+        renderMap(
+          grid,
+          mapSteps
+        );
+      }
+    );
+  }
+
+  function renderMap(
+    grid,
+    mapSteps
+  ) {
+    const first =
+      mapSteps[0];
+
+    const mapName =
+      first.assets
+        ?.map_name ||
+      first.assets
+        ?.project_name ||
+      "Sem mapa";
+
+    const map =
+      document.createElement(
+        "section"
+      );
+
+    map.className =
+      "production-map";
+
+    map.innerHTML = `
+      <div
+        class="production-map-head"
+      >
+        <div>
+          <span
+            class="eyebrow"
+          >
+            MAPA / LOTE
+          </span>
+
+          <h3>
+            ${esc(
+              mapName
+            )}
+          </h3>
+        </div>
+
+        <span
+          class="production-count"
+        >
+          ${mapSteps.length}
+          etapas
+        </span>
+      </div>
+
+      <div
+        class="production-cards"
+      ></div>
+    `;
+
+    const cards =
+      map.querySelector(
+        ".production-cards"
+      );
+
+    mapSteps.forEach(
+      (step) => {
+        cards.appendChild(
+          createStepCard(
+            step
+          )
+        );
+      }
+    );
+
+    grid.appendChild(
+      map
+    );
+  }
+
+  /* =======================================================
+     CARD DA ETAPA
+  ======================================================= */
+
+  function createStepCard(
+    step
+  ) {
+    const [
+      label,
+      state
+    ] =
+      getState(step);
+
+    const card =
+      document.createElement(
+        "article"
+      );
+
+    card.className =
+      `production-card ${state}`;
+
+    const person =
+      step._profile
+        ?.name ||
+      "Sem responsável";
+
+    const dependency =
+      getDependency(
+        step
+      );
+
+    card.innerHTML = `
+      <div
+        class="production-card-top"
+      >
+        <span
+          class="
+            production-pill
+            ${state}
+          "
+        >
+          ${label}
+        </span>
+
+        <span
+          class="production-type"
+        >
+          ${esc(
+            step.step_type ||
+            "ETAPA"
+          )}
+        </span>
+      </div>
+
+      <h4>
+        ${esc(
+          step.assets
+            ?.name ||
+          "Asset"
+        )}
+      </h4>
+
+      <div
+        class="production-person"
+      >
+        👤 ${esc(
+          person
+        )}
+      </div>
+
+      <div
+        class="production-time"
+      >
+        ${
+          step.planned_date
+            ? `
+              📅
+              ${formatDate(
+                step.planned_date
+              )}
+
+              ${
+                step.planned_start
+                  ? `
+                    •
+                    ${esc(
+                      step.planned_start
+                    )}
+                  `
+                  : ""
+              }
+
+              ${
+                step.planned_end
+                  ? `
+                    –
+                    ${esc(
+                      step.planned_end
+                    )}
+                  `
+                  : ""
+              }
+            `
+            : "Sem horário"
+        }
+      </div>
+
+      ${
+        dependency &&
+        !isDone(
+          dependency.status
+        )
+          ? `
+            <div
+              class="
+                production-dependency
+              "
+            >
+              ⏳ Aguardando:
+
+              <strong>
+                ${esc(
+                  dependency.assets
+                    ?.name ||
+                  "etapa anterior"
+                )}
+              </strong>
+            </div>
+          `
+          : ""
+      }
+
+      <div
+        class="production-card-actions"
+      >
+
+        <button
+          type="button"
+          class="production-action"
+          data-open-step="${esc(
+            step.id
+          )}"
+        >
+          Ver detalhes
+        </button>
+
+        ${
+          !isDone(
+            step.status
+          )
+            ? `
+              <button
+                type="button"
+                class="
+                  production-action
+                  primary
+                "
+                data-start-step="${esc(
+                  step.id
+                )}"
+              >
+                ${
+                  isProgress(
+                    step.status
+                  )
+                    ? "Continuar"
+                    : "Iniciar"
+                }
+              </button>
+            `
+            : `
+              <button
+                type="button"
+                class="
+                  production-action
+                  completed
+                "
+                data-reopen-step="${esc(
+                  step.id
+                )}"
+              >
+                Reabrir
+              </button>
+            `
+        }
+
+      </div>
+    `;
+
+    bindCardEvents(
+      card,
+      step
+    );
+
+    return card;
+  }
+
+  /* =======================================================
+     EVENTOS DOS CARDS
+  ======================================================= */
+
+  function bindCardEvents(
+    card,
+    step
+  ) {
+    card
+      .querySelector(
+        "[data-open-step]"
+      )
+      ?.addEventListener(
+        "click",
+        () =>
+          openStepDetails(
+            step.id
+          )
+      );
+
+    card
+      .querySelector(
+        "[data-start-step]"
+      )
+      ?.addEventListener(
+        "click",
+        () =>
+          quickStatus(
+            step.id,
+            "Em andamento"
+          )
+      );
+
+    card
+      .querySelector(
+        "[data-reopen-step]"
+      )
+      ?.addEventListener(
+        "click",
+        () =>
+          quickStatus(
+            step.id,
+            "Não inicializado"
+          )
+      );
+  }
+
+  /* =======================================================
+     MUDANÇA RÁPIDA DE STATUS
+  ======================================================= */
+
+  async function quickStatus(
+    stepId,
+    status
+  ) {
+    const step =
+      steps.find(
+        (item) =>
+          item.id ===
+          stepId
+      );
+
+    if (!step) {
+      return;
+    }
+
+    if (
+      status ===
+      "Em andamento" &&
+      !isReleased(step)
+    ) {
+      alert(
+        "Esta etapa está bloqueada pela dependência anterior."
+      );
+
+      return;
+    }
+
+    await updateStepStatus(
+      step,
+      status
+    );
+  }
+
+  async function updateStepStatus(
+    step,
+    status
+  ) {
+    const { error } =
+      await window.sb
+        .from("asset_steps")
+        .update({
+          status
+        })
+        .eq(
+          "id",
+          step.id
+        );
+
+    if (error) {
+      console.error(
+        "Erro ao alterar status:",
+        error
+      );
+
+      alert(
+        "Não foi possível alterar o status:\n\n" +
+        error.message
+      );
+
+      return;
+    }
+
+    await logProductionActivity(
+      "updated_asset_step_status",
+      step.id,
+      {
+        asset_id:
+          step.asset_id,
+
+        step_type:
+          step.step_type,
+
+        previous_status:
+          step.status,
+
+        new_status:
+          status
+      }
+    );
+
+    await loadProduction();
+  }
+
+  /* =======================================================
+     MODAL DE ETAPA
+  ======================================================= */
+
+  function ensureStepModal() {
+    if (
+      $("#productionStepModal")
+    ) {
+      return;
+    }
+
+    const modal =
+      document.createElement(
+        "div"
+      );
+
+    modal.id =
+      "productionStepModal";
+
+    modal.className =
+      "modal-backdrop hidden";
+
+    modal.innerHTML = `
+      <div
+        class="
+          modal
+          production-detail-modal
+        "
+      >
+
+        <button
+          type="button"
+          class="close"
+          id="productionStepClose"
+        >
+          ×
+        </button>
+
+        <div
+          id="productionStepContent"
+        ></div>
+
+      </div>
+    `;
+
+    document.body.appendChild(
+      modal
+    );
+
+    $("#productionStepClose")
+      .addEventListener(
+        "click",
+        closeStepModal
+      );
+
+    modal.addEventListener(
+      "click",
+      (event) => {
+        if (
+          event.target ===
+          modal
+        ) {
+          closeStepModal();
+        }
+      }
+    );
+  }
+
+  function openStepDetails(
+    stepId
+  ) {
+    const step =
+      steps.find(
+        (item) =>
+          item.id ===
+          stepId
+      );
+
+    if (!step) {
+      return;
+    }
+
+    ensureStepModal();
+
+    const dependency =
+      getDependency(
+        step
+      );
+
+    const asset =
+      step.assets ||
+      {};
+
+    const content =
+      $("#productionStepContent");
+
+    content.innerHTML = `
+      <span
+        class="eyebrow"
+      >
+        ETAPA DE PRODUÇÃO
+      </span>
+
+      <h2>
+        ${esc(
+          asset.name ||
+          "Asset"
+        )}
+      </h2>
+
+      <p
+        class="detail-subtitle"
+      >
+        ${esc(
+          step.step_type ||
+          "Produção"
+        )}
+      </p>
+
+      <div
+        class="detail-grid"
+      >
+
+        <label
+          class="full"
+        >
+          Status
+
+          <select
+            id="productionDetailStatus"
+          >
+            ${[
+              "Não inicializado",
+              "Em andamento",
+              "Concluído",
+              "Bloqueado"
+            ]
+              .map(
+                (status) => `
+                  <option
+                    value="${esc(
+                      status
+                    )}"
+                    ${
+                      normalize(
+                        status
+                      ) ===
+                      normalize(
+                        step.status ||
+                        "Não inicializado"
+                      )
+                        ? "selected"
+                        : ""
+                    }
+                  >
+                    ${esc(
+                      status
+                    )}
+                  </option>
+                `
+              )
+              .join("")}
+          </select>
+        </label>
+
+        <label>
+          Responsável
+
+          <select
+            id="productionDetailProfile"
+          >
+            <option
+              value=""
+            >
+              Sem responsável
+            </option>
+
+            ${profiles
+              .map(
+                (p) => `
+                  <option
+                    value="${esc(
+                      p.id
+                    )}"
+                    ${
+                      p.id ===
+                      step.assigned_to
+                        ? "selected"
+                        : ""
+                    }
+                  >
+                    ${esc(
+                      p.name
+                    )}
+                  </option>
+                `
+              )
+              .join("")}
+          </select>
+        </label>
+
+        <label>
+          Data
+
+          <input
+            id="productionDetailDate"
+            type="date"
+            value="${esc(
+              step.planned_date ||
+              ""
+            )}"
+          >
+        </label>
+
+        <label>
+          Início
+
+          <input
+            id="productionDetailStart"
+            type="time"
+            value="${esc(
+              step.planned_start ||
+              ""
+            )}"
+          >
+        </label>
+
+        <label>
+          Fim
+
+          <input
+            id="productionDetailEnd"
+            type="time"
+            value="${esc(
+              step.planned_end ||
+              ""
+            )}"
+          >
+        </label>
+
+        <div
+          class="
+            detail-box
+            full
+          "
+        >
+          <small>
+            ASSET
+          </small>
+
+          <strong>
+            ${esc(
+              asset.name ||
+              "—"
+            )}
+          </strong>
+
+          ${
+            asset.map_name
+              ? `
+                <span>
+                  Mapa:
+                  ${esc(
+                    asset.map_name
+                  )}
+                </span>
+              `
+              : ""
+          }
+
+          ${
+            asset.project_name
+              ? `
+                <span>
+                  Projeto:
+                  ${esc(
+                    asset.project_name
+                  )}
+                </span>
+              `
+              : ""
+          }
+        </div>
+
+        ${
+          dependency
+            ? `
+              <div
+                class="
+                  detail-box
+                  full
+                "
+              >
+                <small>
+                  DEPENDÊNCIA
+                </small>
+
+                <strong>
+                  ${esc(
+                    dependency.assets
+                      ?.name ||
+                    "Etapa anterior"
+                  )}
+                </strong>
+
+                <span>
+                  Status:
+                  ${esc(
+                    dependency.status ||
+                    "Não inicializado"
+                  )}
+                </span>
+
+                ${
+                  isDone(
+                    dependency.status
+                  )
+                    ? `
+                      <span>
+                        ✓ Dependência concluída
+                      </span>
+                    `
+                    : `
+                      <span>
+                        ⏳ Esta etapa precisa ser concluída antes.
+                      </span>
+                    `
+                }
+              </div>
+            `
+            : `
+              <div
+                class="
+                  detail-box
+                  full
+                "
+              >
+                <small>
+                  DEPENDÊNCIA
+                </small>
+
+                <strong>
+                  Nenhuma
+                </strong>
+
+                <span>
+                  Esta etapa pode começar livremente.
+                </span>
+              </div>
+            `
+        }
+
+        <div
+          class="
+            detail-box
+            full
+          "
+        >
+          <small>
+            ID DA ETAPA
+          </small>
+
+          <span>
+            ${esc(
+              step.id
+            )}
+          </span>
+        </div>
+
+      </div>
+
+      <div
+        class="actions"
+      >
+
+        <button
+          type="button"
+          class="ghost-btn"
+          id="productionStepCancel"
+        >
+          Cancelar
+        </button>
+
+        <button
+          type="button"
+          class="primary-btn"
+          id="productionStepSave"
+        >
+          Salvar alterações
+        </button>
+
+      </div>
+    `;
+
+    $("#productionStepCancel")
+      .onclick =
+      closeStepModal;
+
+    $("#productionStepSave")
+      .onclick =
+      () =>
+        saveStepDetails(
+          step
+        );
+
+    $("#productionStepModal")
+      .classList.remove(
+        "hidden"
+      );
+  }
+
+  function closeStepModal() {
+    $("#productionStepModal")
+      ?.classList.add(
+        "hidden"
+      );
+  }
+
+  /* =======================================================
+     SALVAR ETAPA
+  ======================================================= */
+
+  async function saveStepDetails(
+    step
+  ) {
+    const status =
+      $("#productionDetailStatus")
+        .value;
+
+    /*
+     * Não deixa iniciar
+     * etapa bloqueada.
+     */
+    if (
+      status ===
+        "Em andamento" &&
+      !isReleased(step)
+    ) {
+      alert(
+        "Esta etapa ainda está bloqueada.\n\n" +
+        "Conclua primeiro a etapa da qual ela depende."
+      );
+
+      return;
+    }
+
+    /*
+     * Não deixa concluir
+     * uma etapa que ainda
+     * depende de outra.
+     */
+    if (
+      status ===
+        "Concluído" &&
+      !isReleased(step)
+    ) {
+      alert(
+        "Esta etapa não pode ser concluída enquanto a dependência estiver pendente."
+      );
+
+      return;
+    }
+
+    const payload = {
+      status,
+
+      assigned_to:
+        $("#productionDetailProfile")
+          .value ||
+        null,
+
+      planned_date:
+        $("#productionDetailDate")
+          .value ||
+        null,
+
+      planned_start:
+        $("#productionDetailStart")
+          .value ||
+        null,
+
+      planned_end:
+        $("#productionDetailEnd")
+          .value ||
+        null
+    };
+
+    const button =
+      $("#productionStepSave");
+
+    if (button) {
+      button.disabled =
+        true;
+
+      button.textContent =
+        "Salvando...";
+    }
+
+    const { error } =
+      await window.sb
+        .from("asset_steps")
+        .update(payload)
+        .eq(
+          "id",
+          step.id
+        );
+
+    if (error) {
+      console.error(
+        "Erro ao salvar etapa:",
+        error
+      );
+
+      alert(
+        "Não foi possível salvar:\n\n" +
+        error.message
+      );
+
+      if (button) {
+        button.disabled =
+          false;
+
+        button.textContent =
+          "Salvar alterações";
+      }
+
+      return;
+    }
+
+    await logProductionActivity(
+      "updated_asset_step",
+      step.id,
+      {
+        previous_status:
+          step.status,
+
+        new_status:
+          payload.status,
+
+        assigned_to:
+          payload.assigned_to,
+
+        planned_date:
+          payload.planned_date,
+
+        planned_start:
+          payload.planned_start,
+
+        planned_end:
+          payload.planned_end
+      }
+    );
+
+    closeStepModal();
+
+    await loadProduction();
+
+    if (
+      window.refreshBithouse
+    ) {
+      await window.refreshBithouse();
+    }
+  }
+
+  /* =======================================================
+     LOG DE ATIVIDADE
+  ======================================================= */
+
+  async function logProductionActivity(
+    action,
+    entityId,
+    metadata
+  ) {
+    if (
+      !window.user
+    ) {
+      return;
+    }
+
+    const { error } =
+      await window.sb
+        .from(
+          "activity_log"
+        )
+        .insert({
+          /*
+           * Sua tabela usa actor.
+           */
+          actor:
+            window.user.id,
+
+          action,
+
+          entity_type:
+            "asset_step",
+
+          entity_id:
+            entityId,
+
+          /*
+           * Sua tabela usa metadata.
+           */
+          metadata:
+            metadata || {}
+        });
+
+    if (error) {
+      console.warn(
+        "Activity log:",
+        error
+      );
+    }
+  }
+
+  /* =======================================================
+     UTILITÁRIO
+  ======================================================= */
+
+  function setText(
+    selector,
+    value
+  ) {
+    const element =
+      $(selector);
+
+    if (element) {
+      element.textContent =
+        value;
+    }
+  }
+
+  /* =======================================================
+     EVENTOS
+  ======================================================= */
+
+  function initProduction() {
+    $("#productionFilter")
+      ?.addEventListener(
+        "change",
+        renderProduction
+      );
+
+    $("#productionRefresh")
+      ?.addEventListener(
+        "click",
+        loadProduction
+      );
+
+    loadProduction();
+
+    /*
+     * Canal específico da produção.
+     */
+    if (
+      window.sb
+    ) {
+      window.sb
+        .channel(
+          "bithouse-production-live"
+        )
+        .on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema: "public",
+            table: "asset_steps"
+          },
+          loadProduction
+        )
+        .on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema: "public",
+            table: "assets"
+          },
+          loadProduction
+        )
+        .subscribe();
+    }
+  }
+
+  /*
+   * O app.js chama isso
+   * depois do login.
+   */
+  window.loadProduction =
+    loadProduction;
+
+  if (
+    document.readyState ===
+    "loading"
+  ) {
+    document.addEventListener(
+      "DOMContentLoaded",
+      initProduction
+    );
+  } else {
+    initProduction();
+  }
 
 })();
