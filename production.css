@@ -1,25 +1,250 @@
-/* Bithouse Production Board */
-.production-controls{display:flex;gap:8px;align-items:center}
-.production-controls select{border:2px solid #17294d;border-radius:20px;padding:8px 12px;background:#fff;font:800 12px Nunito;color:#17294d}
-.production-stats{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin:18px 0}
-.production-stats>div{background:#fff;border:1px solid #d9e1ef;border-radius:16px;padding:14px}
-.production-stats small{display:block;font-size:10px;letter-spacing:1.5px;font-weight:900;color:#72819b}
-.production-stats strong{display:block;font:800 27px "Space Grotesk";margin-top:5px}
-.production-map{margin-top:20px}
-.production-map-head{display:flex;justify-content:space-between;align-items:end;margin-bottom:10px}
-.production-map-head h3{font:700 22px "Space Grotesk";margin:4px 0 0}
-.production-count{font-size:11px;font-weight:900;color:#72819b}
-.production-cards{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
-.production-card{background:#fff;border:1px solid #d9e1ef;border-radius:18px;padding:15px}
-.production-card-top{display:flex;justify-content:space-between;align-items:center;gap:8px}
-.production-pill{display:inline-block;padding:5px 8px;border-radius:9px;font-size:9px;font-weight:900}
-.production-pill.released{background:#e5f7f0;color:#26775b}
-.production-pill.blocked{background:#fff5d5;color:#8b6810}
-.production-pill.done{background:#e6f1ff;color:#315eae}
-.production-type{font-size:9px;font-weight:900;color:#8491a8}
-.production-card h4{font:700 17px "Space Grotesk";margin:12px 0 8px}
-.production-person,.production-time{font-size:11px;color:#687895;margin-top:5px}
-.production-dependency{margin-top:10px;background:#fff5d5;border-radius:10px;padding:8px;font-size:10px;font-weight:800;color:#80631b}
-.production-empty{background:#fff;border:1px dashed #cbd6e6;border-radius:18px;padding:28px;text-align:center;color:#75839d;font-weight:800}
-@media(max-width:850px){.production-stats{grid-template-columns:repeat(2,1fr)}.production-cards{grid-template-columns:1fr 1fr}}
-@media(max-width:600px){.production-controls{width:100%;flex-wrap:wrap}.production-controls select{flex:1}.production-stats,.production-cards{grid-template-columns:1fr}}
+/* =========================================================
+   BITHOUSE — PRODUCTION INTERACTION
+========================================================= */
+
+.production-card {
+  transition:
+    transform .15s ease,
+    box-shadow .15s ease;
+}
+
+.production-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(23,41,77,.08);
+}
+
+.production-pill.progress {
+  background: #e6efff;
+  color: #315eae;
+}
+
+.production-pill.not-started {
+  background: #eef1f5;
+  color: #69778e;
+}
+
+.production-card-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 14px;
+  align-items: center;
+}
+
+.production-view-btn {
+  flex: 1;
+  border: 2px solid #17294d;
+  border-radius: 11px;
+  padding: 9px 10px;
+  background: #fff;
+  color: #17294d;
+  font: 800 11px Nunito;
+  cursor: pointer;
+}
+
+.production-view-btn:hover {
+  background: #f4f7fc;
+}
+
+.production-status-select {
+  flex: 1.4;
+  min-width: 0;
+  border: 2px solid #d7dfec;
+  border-radius: 11px;
+  padding: 9px 8px;
+  background: #fff;
+  color: #17294d;
+  font: 800 10px Nunito;
+  cursor: pointer;
+}
+
+.production-status-select:focus {
+  outline: none;
+  border-color: #4d78ed;
+}
+
+/* =========================================================
+   DETAILS MODAL
+========================================================= */
+
+.production-details-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(23,41,77,.38);
+  backdrop-filter: blur(5px);
+}
+
+.production-details-backdrop.hidden {
+  display: none;
+}
+
+.production-details-modal {
+  position: relative;
+  width: min(720px, 100%);
+  max-height: 90vh;
+  overflow-y: auto;
+  padding: 30px;
+  background: #fff;
+  border: 2px solid #17294d;
+  border-radius: 24px;
+  box-shadow: 0 20px 60px rgba(23,41,77,.20);
+}
+
+.production-details-close {
+  position: absolute;
+  top: 15px;
+  right: 15px;
+  width: 38px;
+  height: 38px;
+  border: 2px solid #17294d;
+  border-radius: 50%;
+  background: #fff;
+  color: #17294d;
+  font-size: 22px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.production-details-modal h2 {
+  margin: 8px 45px 12px 0;
+  font: 800 30px "Space Grotesk";
+  color: #17294d;
+}
+
+.production-details-status-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 25px;
+}
+
+.production-details-section {
+  margin-top: 24px;
+}
+
+.production-details-section h3 {
+  margin: 0 0 10px;
+  font: 800 16px "Space Grotesk";
+  color: #17294d;
+}
+
+.production-detail-box {
+  padding: 15px;
+  background: #f6f8fc;
+  border: 1px solid #dce4ef;
+  border-radius: 15px;
+}
+
+.production-detail-box strong {
+  display: block;
+  font: 800 16px "Space Grotesk";
+  color: #17294d;
+}
+
+.production-detail-box p {
+  margin: 8px 0 0;
+  color: #687895;
+  line-height: 1.5;
+}
+
+.production-details-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+  margin-top: 20px;
+}
+
+.production-details-grid > div {
+  padding: 13px;
+  background: #f7f9fc;
+  border-radius: 13px;
+}
+
+.production-details-grid small {
+  display: block;
+  margin-bottom: 5px;
+  color: #8290a7;
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: 1px;
+}
+
+.production-details-grid strong {
+  color: #17294d;
+  font: 800 13px Nunito;
+}
+
+.production-status-buttons {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.status-btn {
+  border: 2px solid #d7dfec;
+  border-radius: 13px;
+  padding: 12px 10px;
+  background: #fff;
+  color: #17294d;
+  font: 800 11px Nunito;
+  cursor: pointer;
+}
+
+.status-btn:hover,
+.status-btn.active {
+  border-color: #17294d;
+  background: #eef3ff;
+}
+
+.status-btn:disabled {
+  opacity: .55;
+  cursor: wait;
+}
+
+.production-dependency strong {
+  display: block;
+  margin-top: 4px;
+}
+
+.production-dependency span {
+  display: block;
+  margin-top: 3px;
+  opacity: .75;
+}
+
+.production-dependency.dependency-done {
+  background: #e5f7f0;
+  color: #26775b;
+}
+
+/* MOBILE */
+
+@media (max-width: 650px) {
+
+  .production-card-actions {
+    flex-direction: column;
+  }
+
+  .production-view-btn,
+  .production-status-select {
+    width: 100%;
+  }
+
+  .production-details-modal {
+    padding: 22px;
+    border-radius: 20px;
+  }
+
+  .production-details-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .production-status-buttons {
+    grid-template-columns: 1fr;
+  }
+
+}
