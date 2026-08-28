@@ -44,7 +44,11 @@
     if(!sb()||!window.user)return;
     const {data:c,error}=await sb().from('commissions').select('*').eq('id',id).maybeSingle();
     if(error||!c){alert(error?.message||'Comissão não encontrada.');return;}
-    const {data:profiles}=await sb().from('profiles').select('id,name').eq('active',true).order('name');
+
+    // A tabela profiles desta instalação não possui coluna "active".
+    // Carregamos os três sócios diretamente para o seletor.
+    const {data:profiles, error:profilesError}=await sb().from('profiles').select('id,name,role,specialty').order('name');
+    if(profilesError){alert('Não foi possível carregar os responsáveis: '+profilesError.message);return;}
     const owners=profiles||[];
     const ownerOptions='<option value="">Sem responsável</option>'+owners.map(p=>`<option value="${esc(p.id)}" ${p.id===c.owner_id?'selected':''}>${esc(p.name)}</option>`).join('');
     const progress=Math.round(Number(c.progress||0)*100);
@@ -62,9 +66,6 @@
       <div class="bh9-field full"><label>Progresso</label><div class="bh9-progress"><input id="bh9Progress" type="range" min="0" max="100" step="1" value="${progress}"><output id="bh9ProgressOut">${progress}%</output></div></div>
       <div class="bh9-field full"><label>Observações</label><textarea id="bh9Notes">${esc(c.notes||'')}</textarea></div>
     </div>`;
-    if(typeof window.openGlobal==='function'){
-      /* openGlobal is private in app.js, so use its DOM modal directly when available. */
-    }
     const modal=$('#bhGlobalModal');
     if(!modal){alert('Interface de edição ainda não carregou. Atualize a página e tente novamente.');return;}
     $('#bhModalEyebrow').textContent='EDITAR COMISSÃO';
