@@ -1,6 +1,6 @@
 /* BITHOUSE — APP CORE
-   Schema-safe: no nested FK assumptions, interactive agenda,
-   commissions, team, realtime and detail modals.
+   Performance optimized: smaller selects, debounced realtime,
+   indexed rendering and guarded auth boot.
 */
 (function () {
   "use strict";
@@ -37,6 +37,10 @@
   let weekStart = monday(new Date());
   let channel = null;
   let data = { commissions:[], agenda:[], tasks:[], profiles:[] };
+  let enteringUserId = null;
+  let refreshTimer = null;
+  let refreshRunning = false;
+  let refreshQueued = false;
 
   function showLogin() { $("#login")?.classList.remove("hidden"); $("#app")?.classList.add("hidden"); }
   function showApp() { $("#login")?.classList.add("hidden"); $("#app")?.classList.remove("hidden"); }
@@ -47,72 +51,114 @@
       if (error) console.error("Auth:", error);
       if (sessionData?.session) { user = sessionData.session.user; await enter(); }
       else showLogin();
-      sb.auth.onAuthStateChange(async (_event, session) => {
-        if (session) { user = session.user; await enter(); }
-        else { user = null; profile = null; showLogin(); }
+      sb.auth.onAuthStateChange((_event, session) => {
+        if (session) {
+          if (user?.id === session.user.id && enteringUserId === session.user.id) return;
+          user = session.user;
+          enter();
+        } else {
+          enteringUserId = null;
+          user = null;
+          profile = null;
+          if (channel) { sb.removeChannel(channel); channel = null; }
+          showLogin();
+        }
       });
     } catch (e) { console.error("Boot:", e); showLogin(); }
   }
 
   async function enter() {
-    if (!user) return;
+    if (!user || enteringUserId === user.id) return;
+    enteringUserId = user.id;
     showApp();
     window.user = user;
 
-    const own = await sb.from("profiles").select("*").eq("id", user.id).maybeSingle();
-    if (own.error) console.warn("Perfil:", own.error);
-    profile = own.data || null;
+    try {
+      const own = await sb.from("profiles").select("id,name,specialty,role,hours_per_day,days_per_week,active").eq("id", user.id).maybeSingle();
+      if (own.error) console.warn("Perfil:", own.error);
+      profile = own.data || null;
 
-    if (!profile) {
-      const created = await sb.from("profiles").upsert({id:user.id, name:user.email?.split("@")[0] || "Membro"});
-      if (!created.error) {
-        const again = await sb.from("profiles").select("*").eq("id", user.id).maybeSingle();
-        profile = again.data || null;
+      if (!profile) {
+        const created = await sb.from("profiles").upsert({id:user.id, name:user.email?.split("@")[0] || "Membro"});
+        if (!created.error) {
+          const again = await sb.from("profiles").select("id,name,specialty,role,hours_per_day,days_per_week,active").eq("id", user.id).maybeSingle();
+          profile = again.data || null;
+        }
       }
+      window.profile = profile;
+      if ($("#userName")) $("#userName").textContent = profile?.name || user.email || "Membro";
+      ensureGlobalModal();
+      subscribe();
+      await refresh();
+      if (window.loadProduction) await window.loadProduction();
+    } catch (e) {
+      console.error("Enter:", e);
+    } finally {
+      enteringUserId = null;
     }
-    window.profile = profile;
-    if ($("#userName")) $("#userName").textContent = profile?.name || user.email || "Membro";
-    ensureGlobalModal();
-    subscribe();
-    await refresh();
-    if (window.loadProduction) window.loadProduction();
+  }
+
+  function scheduleRefresh() {
+    clearTimeout(refreshTimer);
+    refreshTimer = setTimeout(() => { refreshTimer = null; refresh(); }, 180);
   }
 
   function subscribe() {
     if (channel) sb.removeChannel(channel);
     channel = sb.channel("bithouse-live")
-      .on("postgres_changes", {event:"*", schema:"public", table:"commissions"}, refresh)
-      .on("postgres_changes", {event:"*", schema:"public", table:"agenda_items"}, refresh)
-      .on("postgres_changes", {event:"*", schema:"public", table:"tasks"}, refresh)
-      .on("postgres_changes", {event:"*", schema:"public", table:"profiles"}, refresh)
-      .on("postgres_changes", {event:"*", schema:"public", table:"asset_steps"}, refreshAll)
+      .on("postgres_changes", {event:"*", schema:"public", table:"commissions"}, scheduleRefresh)
+      .on("postgres_changes", {event:"*", schema:"public", table:"agenda_items"}, scheduleRefresh)
+      .on("postgres_changes", {event:"*", schema:"public", table:"tasks"}, scheduleRefresh)
+      .on("postgres_changes", {event:"*", schema:"public", table:"profiles"}, scheduleRefresh)
+      .on("postgres_changes", {event:"*", schema:"public", table:"asset_steps"}, () => {
+        clearTimeout(window.__bhProductionTimer);
+        window.__bhProductionTimer = setTimeout(() => window.loadProduction?.(), 250);
+      })
       .subscribe((s) => { if ($("#syncState")) $("#syncState").textContent = s === "SUBSCRIBED" ? "● sincronizado" : "● conectando..."; });
   }
 
   async function loadData() {
     const [c,a,t,p] = await Promise.all([
-      sb.from("commissions").select("*").order("created_at", {ascending:false}),
-      sb.from("agenda_items").select("*").order("date", {ascending:true}),
-      sb.from("tasks").select("*"),
-      sb.from("profiles").select("*").order("name", {ascending:true})
+      sb.from("commissions").select("id,name,client,priority,status,owner_id,start_date,deadline,map_name,progress,notes,created_at,created_by").order("created_at", {ascending:false}),
+      sb.from("agenda_items").select("id,commission_id,profile_id,collaborator_name,date,task,hours,status,start_time,end_time,description").order("date", {ascending:true}),
+      sb.from("tasks").select("id,status"),
+      sb.from("profiles").select("id,name,specialty,role,hours_per_day,days_per_week,active").order("name", {ascending:true})
     ]);
     if (c.error) console.error("Comissões:", c.error);
     if (a.error) console.error("Agenda:", a.error);
     if (t.error) console.error("Tasks:", t.error);
     if (p.error) console.error("Profiles:", p.error);
+
     const commissions = c.data || [];
     const profiles = p.data || [];
-    const owners = new Map(profiles.map(x => [x.id, x]));
-    const agenda = (a.data || []).map(x => ({...x, commission: commissions.find(c => c.id === x.commission_id) || null, profile: profiles.find(p => p.id === x.profile_id) || null}));
-    commissions.forEach(x => x.owner = owners.get(x.owner_id) || null);
+    const commissionMap = new Map(commissions.map(x => [x.id, x]));
+    const profileMap = new Map(profiles.map(x => [x.id, x]));
+    const agenda = (a.data || []).map(x => ({
+      ...x,
+      commission: commissionMap.get(x.commission_id) || null,
+      profile: profileMap.get(x.profile_id) || null
+    }));
+    commissions.forEach(x => { x.owner = profileMap.get(x.owner_id) || null; });
     return {commissions, agenda, tasks:t.data || [], profiles};
   }
 
   async function refresh() {
-    if (!user) return;
-    try { data = await loadData(); render(data); } catch (e) { console.error("Refresh:", e); }
+    if (!user || refreshRunning) { if (user) refreshQueued = true; return; }
+    refreshRunning = true;
+    try {
+      data = await loadData();
+      requestAnimationFrame(() => render(data));
+    } catch (e) { console.error("Refresh:", e); }
+    finally {
+      refreshRunning = false;
+      if (refreshQueued) { refreshQueued = false; scheduleRefresh(); }
+    }
   }
-  async function refreshAll() { await refresh(); if (window.loadProduction) window.loadProduction(); }
+
+  async function refreshAll() {
+    await refresh();
+    if (window.loadProduction) await window.loadProduction();
+  }
 
   function render(d) {
     const active = d.commissions.filter(c => !["concluido","cancelado"].includes(norm(c.status)));
@@ -121,11 +167,22 @@
     const committed = d.agenda.filter(x => status(x.status) !== "Concluído").reduce((s,x) => s+n(x.hours),0);
     const totalCap = d.profiles.reduce((s,p) => s+capacity(p),0);
     const pct = totalCap ? Math.min(1, committed/totalCap) : 0;
+
+    const agendaByCommission = new Map();
+    const usedByProfile = new Map();
+    d.agenda.forEach(x => {
+      agendaByCommission.set(x.commission_id, (agendaByCommission.get(x.commission_id) || 0) + n(x.hours));
+      if (status(x.status) !== "Concluído") usedByProfile.set(x.profile_id, (usedByProfile.get(x.profile_id) || 0) + n(x.hours));
+    });
+    const commissionsByOwner = new Map();
+    d.commissions.forEach(c => { if(c.owner_id) commissionsByOwner.set(c.owner_id, (commissionsByOwner.get(c.owner_id) || 0) + 1); });
+
     set("#activeCount", active.length); set("#highCount", high.length); set("#taskCount", openTasks.length); set("#ownerCount", d.commissions.filter(c => c.owner_id).length);
     set("#capacityPct", Math.round(pct*100)+"%"); if ($("#capacityBar")) $("#capacityBar").style.width = pct*100+"%";
     set("#committed", h(committed)+"h"); set("#free", h(Math.max(0,totalCap-committed))+"h"); set("#freePreview", h(Math.max(0,totalCap-committed))+"h");
-    renderAgenda(d); renderCommissions(d); renderTeam(d);
+    renderAgenda(d); renderCommissions(d, agendaByCommission); renderTeam(d, usedByProfile, commissionsByOwner);
   }
+
   function set(sel,v){ const e=$(sel); if(e) e.textContent=v; }
 
   function renderAgenda(d) {
@@ -133,9 +190,11 @@
     set("#weekTitle", `${date(iso(weekStart))} — ${date(iso(add(weekStart,5)))}`);
     grid.innerHTML = "";
     const names = ["SEG","TER","QUA","QUI","SEX","SÁB"];
+    const weekItems = new Map();
+    d.agenda.forEach(x => { if(!weekItems.has(x.date)) weekItems.set(x.date, []); weekItems.get(x.date).push(x); });
     for(let i=0;i<6;i++){
       const key=iso(add(weekStart,i));
-      const items=d.agenda.filter(x=>x.date===key).sort((a,b)=>(a.start_time||"").localeCompare(b.start_time||""));
+      const items=(weekItems.get(key)||[]).slice().sort((a,b)=>(a.start_time||"").localeCompare(b.start_time||""));
       const day=document.createElement("div"); day.className="day";
       day.innerHTML=`<div class="day-head"><span>${names[i]}</span><small>${date(key)}</small></div>`;
       if(!items.length) day.innerHTML+=`<div class="muted" style="padding:16px">Dia livre ✨</div>`;
@@ -149,22 +208,22 @@
     }
   }
 
-  function renderCommissions(d) {
+  function renderCommissions(d, totals) {
     const grid=$("#commissionGrid"); if(!grid)return; grid.innerHTML="";
     d.commissions.forEach(c=>{
-      const total=d.agenda.filter(x=>x.commission_id===c.id).reduce((s,x)=>s+n(x.hours),0);
+      const total=totals.get(c.id)||0;
       const el=document.createElement("article"); el.className="card"; el.dataset.commissionId=c.id;
       el.innerHTML=`<span class="badge ${norm(c.priority)==="alta"?"high":""}">${esc(c.priority||"Média")}</span><h3>${esc(c.name)}</h3><div class="muted">${esc(c.client||"Cliente não informado")}</div><div class="bar"><span style="width:${Math.max(0,Math.min(100,n(c.progress)*100))}%"></span></div><div class="meta"><div><small>Responsável</small><b>${esc(c.owner?.name||"Sem responsável")}</b></div><div><small>Horas agendadas</small><b>${h(total)}h</b></div><div><small>Prazo</small><b>${date(c.deadline)}</b></div><div><small>Mapa</small><b>${esc(c.map_name||"—")}</b></div></div><button type="button" class="ghost-btn small bh-open-commission">Ver detalhes</button>`;
       el.querySelector(".bh-open-commission").addEventListener("click",()=>openCommission(c.id)); grid.appendChild(el);
     });
   }
 
-  function renderTeam(d) {
+  function renderTeam(d, usedByProfile, commissionsByOwner) {
     const grid=$("#teamGrid"); if(!grid)return; grid.innerHTML="";
     d.profiles.forEach(p=>{
-      const used=d.agenda.filter(x=>x.profile_id===p.id && status(x.status)!=="Concluído").reduce((s,x)=>s+n(x.hours),0);
+      const used=usedByProfile.get(p.id)||0;
       const cap=capacity(p), free=Math.max(0,cap-used), pct=cap?Math.min(1,used/cap):0;
-      grid.innerHTML+=`<article class="card"><h3>${esc(p.name||"Membro")}</h3><div class="muted">${esc(p.specialty||p.role||"Equipe")}</div><div style="font:800 30px 'Space Grotesk';margin-top:12px">${h(free)}h <span class="muted">livres</span></div><div class="bar"><span style="width:${pct*100}%"></span></div><div class="muted">${d.commissions.filter(c=>c.owner_id===p.id).length} comissão(ões) como responsável • ${h(used)}h comprometidas</div></article>`;
+      grid.innerHTML+=`<article class="card"><h3>${esc(p.name||"Membro")}</h3><div class="muted">${esc(p.specialty||p.role||"Equipe")}</div><div style="font:800 30px 'Space Grotesk';margin-top:12px">${h(free)}h <span class="muted">livres</span></div><div class="bar"><span style="width:${pct*100}%"></span></div><div class="muted">${commissionsByOwner.get(p.id)||0} comissão(ões) como responsável • ${h(used)}h comprometidas</div></article>`;
     });
   }
 
