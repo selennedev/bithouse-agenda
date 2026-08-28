@@ -1,12 +1,14 @@
-/* BITHOUSE CORE LITE — sessão única, sem timers de corrida */
+/* BITHOUSE CORE LITE v2 — config correta + sessão determinística + login leve */
 (function(){'use strict';
-const SUPABASE_URL=window.SUPABASE_URL||window.supabaseUrl, SUPABASE_KEY=window.SUPABASE_ANON_KEY||window.supabaseKey;
-if(!window.supabase||!SUPABASE_URL||!SUPABASE_KEY){console.error('Bithouse: configuração Supabase ausente');return}
-window.sb=window.supabase.createClient(SUPABASE_URL,SUPABASE_KEY,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}});
-const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
+const URL=window.BITHOUSE_SUPABASE_URL,KEY=window.BITHOUSE_SUPABASE_KEY;
+if(!window.supabase||!URL||!KEY){console.error('Bithouse: configuração Supabase ausente');return;}
+window.sb=window.supabase.createClient(URL,KEY,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}});
+const q=s=>document.querySelector(s),esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
 const norm=v=>String(v??'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim();
 const fmt=v=>{if(!v)return '';const d=new Date(String(v).includes('T')?v:v+'T12:00:00');return new Intl.DateTimeFormat('pt-BR',{day:'2-digit',month:'2-digit'}).format(d)};
-window.BH={q:s=>document.querySelector(s),esc,norm,fmt,session:null,user:null};
-let readyResolve;window.BH.ready=new Promise(r=>readyResolve=r);
-(async()=>{try{const {data,error}=await window.sb.auth.getSession();if(error)throw error;window.BH.session=data.session||null;window.user=data.session?.user||null;window.BH.user=window.user;readyResolve(window.user);document.documentElement.dataset.auth=window.user?'yes':'no';const name=document.querySelector('#userName');if(name)name.textContent=window.user?.user_metadata?.name||window.user?.email?.split('@')[0]||'Sócio';const state=document.querySelector('#syncState');if(state)state.textContent=window.user?'● conectado':'● aguardando login';if(window.user){window.sb.auth.onAuthStateChange((_e,s)=>{window.BH.session=s;window.user=s?.user||null;window.BH.user=window.user;});}}catch(e){console.error('Bithouse sessão:',e);readyResolve(null);}})();
+window.BH={q,esc,norm,fmt,session:null,user:null};let resolveReady;window.BH.ready=new Promise(r=>resolveReady=r);
+function setAuth(on){document.documentElement.dataset.auth=on?'yes':'no';const app=q('#app'),login=q('#login');if(app)app.classList.toggle('hidden',!on);if(login)login.classList.toggle('hidden',on);}
+function loginUI(){const box=q('#login');if(!box)return;box.className='login-wrap';box.innerHTML='<div class="login-card"><div class="brand"><span class="brand-mark">✦</span><span>Bithouse</span></div><span class="eyebrow">CENTRAL DE OPERAÇÕES</span><h1>Agenda compartilhada.</h1><p>Entre com seu e-mail da Bithouse para acessar.</p><input id="coreEmail" type="email" autocomplete="email" placeholder="seu@email.com"><button class="primary-btn" id="coreLogin">Enviar link de acesso</button><div id="coreMsg" class="login-message" aria-live="polite"></div></div>';q('#coreLogin').onclick=async()=>{const email=q('#coreEmail').value.trim(),msg=q('#coreMsg');if(!email){msg.textContent='Digite seu e-mail.';return}const {error}=await window.sb.auth.signInWithOtp({email,options:{emailRedirectTo:location.href}});msg.textContent=error?error.message:'Link enviado! Verifique seu e-mail.';};}
+async function init(){try{const {data,error}=await window.sb.auth.getSession();if(error)throw error;const session=data.session||null;window.BH.session=session;window.user=session?.user||null;window.BH.user=window.user;setAuth(!!session);if(!session)loginUI();const name=q('#userName');if(name)name.textContent=session?.user?.user_metadata?.name||session?.user?.email?.split('@')[0]||'Sócio';const state=q('#syncState');if(state)state.textContent=session?'● conectado':'● aguardando login';resolveReady(window.user);window.sb.auth.onAuthStateChange((_event,s)=>{window.BH.session=s||null;window.user=s?.user||null;window.BH.user=window.user;setAuth(!!s);if(s){const n=q('#userName');if(n)n.textContent=s.user?.user_metadata?.name||s.user?.email?.split('@')[0]||'Sócio';}else loginUI();});}catch(e){console.error('Bithouse sessão:',e);setAuth(false);loginUI();resolveReady(null);}}
+if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init);else init();
 })();
