@@ -5,4 +5,5 @@ function render(){const host=document.querySelector('#opsInsights');if(!host)ret
 window.loadOps=loadOps;if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',loadOps);else loadOps();
 if(!window.bithousePhase7Loader){window.bithousePhase7Loader=true;const s=document.createElement('script');s.src='phase7.js?v=7';s.defer=true;document.head.appendChild(s)}
 if(!window.bithousePhase8Loader){window.bithousePhase8Loader=true;const s=document.createElement('script');s.src='phase8-ui.js?v=9';s.defer=true;document.head.appendChild(s)}
+if(!window.bithousePhase9Loader){window.bithousePhase9Loader=true;const s=document.createElement('script');s.src='phase9-commissions.js?v=1';s.defer=true;document.head.appendChild(s)}
 })();
