@@ -20,22 +20,22 @@
   const modules={
     agenda:['agenda-phase2.js'],
     production:['production.js'],
-    capacity:['phase4.js','phase4-intelligence.js'],
-    commissions:['phase3.js','phase4.js','phase5.js','phase6.js','phase7.js','phase8-ui.js?v=10','phase9-commissions.js'],
-    team:['phase10-members.js?v=3'],
-    stability:['stability.js','phase11-fixes.js?v=2']
+    capacity:['phase4-intelligence.js'],
+    commissions:['phase9-commissions.js','phase11-fixes.js?v=3'],
+    team:[],
+    stability:['stability.js']
   };
-  const loaded=new Set(), loading=new Set();
+  const loaded=new Set(),loading=new Set();
   function load(src){if(loaded.has(src)||loading.has(src))return Promise.resolve();loading.add(src);return new Promise(resolve=>{const s=document.createElement('script');s.src=src;s.defer=true;s.onload=()=>{loaded.add(src);loading.delete(src);resolve()};s.onerror=()=>{loading.delete(src);console.warn('Bithouse: módulo não carregou',src);resolve()};document.body.appendChild(s);});}
   async function loadGroup(name){for(const src of modules[name]||[])await load(src);}
   function ready(){
     const status=document.getElementById('bootStatus');
     if(status){status.textContent='Bithouse pronta';setTimeout(()=>status.remove(),500);}
-    // Tablet: only the small agenda interaction is loaded initially.
-    if(isSmall) loadGroup('agenda');
-    else (async()=>{await loadGroup('agenda');await loadGroup('stability');await loadGroup('production');await loadGroup('commissions');await loadGroup('team');await loadGroup('capacity');})();
+    loadGroup('agenda');
+    if(!isSmall)loadGroup('stability');
     document.querySelectorAll('a[href^="#"]').forEach(a=>a.addEventListener('click',()=>{const id=a.getAttribute('href').slice(1);if(id==='production')loadGroup('production');if(id==='capacity')loadGroup('capacity');if(id==='commissions')loadGroup('commissions');if(id==='team')loadGroup('team');}));
-    document.getElementById('productionRefresh')?.addEventListener('click',()=>loadGroup('production'));
+    // Editor e participantes são leves e ficam disponíveis ao abrir Comissões.
+    if(location.hash==='#commissions')loadGroup('commissions');
   }
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',ready);else ready();
 })();
