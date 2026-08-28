@@ -5,4 +5,6 @@ function render(){const host=document.querySelector('#opsInsights');if(!host)ret
 window.loadOps=loadOps;if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',loadOps);else loadOps();
 /* PHASE 7 loader — kept here so existing index.html needs no manual edit. */
 if(!window.bithousePhase7Loader){window.bithousePhase7Loader=true;const s=document.createElement('script');s.src='phase7.js?v=7';s.defer=true;document.head.appendChild(s)}
+/* PHASE 8 — visual system loader */
+if(!window.bithousePhase8Loader){window.bithousePhase8Loader=true;const s=document.createElement('script');s.src='phase8-ui.js?v=8';s.defer=true;document.head.appendChild(s)}
 })();
