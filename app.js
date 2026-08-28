@@ -38,6 +38,7 @@
   let channel = null;
   let data = { commissions:[], agenda:[], tasks:[], profiles:[] };
   let enteringUserId = null;
+  let enteredUserId = null;
   let refreshTimer = null;
   let refreshRunning = false;
   let refreshQueued = false;
@@ -53,11 +54,12 @@
       else showLogin();
       sb.auth.onAuthStateChange((_event, session) => {
         if (session) {
-          if (user?.id === session.user.id && enteringUserId === session.user.id) return;
+          if (user?.id === session.user.id && (enteringUserId === session.user.id || enteredUserId === session.user.id)) return;
           user = session.user;
           enter();
         } else {
           enteringUserId = null;
+          enteredUserId = null;
           user = null;
           profile = null;
           if (channel) { sb.removeChannel(channel); channel = null; }
@@ -68,7 +70,7 @@
   }
 
   async function enter() {
-    if (!user || enteringUserId === user.id) return;
+    if (!user || enteringUserId === user.id || enteredUserId === user.id) return;
     enteringUserId = user.id;
     showApp();
     window.user = user;
@@ -91,6 +93,7 @@
       subscribe();
       await refresh();
       if (window.loadProduction) await window.loadProduction();
+      enteredUserId = user.id;
     } catch (e) {
       console.error("Enter:", e);
     } finally {
@@ -133,11 +136,7 @@
     const profiles = p.data || [];
     const commissionMap = new Map(commissions.map(x => [x.id, x]));
     const profileMap = new Map(profiles.map(x => [x.id, x]));
-    const agenda = (a.data || []).map(x => ({
-      ...x,
-      commission: commissionMap.get(x.commission_id) || null,
-      profile: profileMap.get(x.profile_id) || null
-    }));
+    const agenda = (a.data || []).map(x => ({...x, commission: commissionMap.get(x.commission_id) || null, profile: profileMap.get(x.profile_id) || null}));
     commissions.forEach(x => { x.owner = profileMap.get(x.owner_id) || null; });
     return {commissions, agenda, tasks:t.data || [], profiles};
   }
@@ -167,7 +166,6 @@
     const committed = d.agenda.filter(x => status(x.status) !== "Concluído").reduce((s,x) => s+n(x.hours),0);
     const totalCap = d.profiles.reduce((s,p) => s+capacity(p),0);
     const pct = totalCap ? Math.min(1, committed/totalCap) : 0;
-
     const agendaByCommission = new Map();
     const usedByProfile = new Map();
     d.agenda.forEach(x => {
@@ -176,7 +174,6 @@
     });
     const commissionsByOwner = new Map();
     d.commissions.forEach(c => { if(c.owner_id) commissionsByOwner.set(c.owner_id, (commissionsByOwner.get(c.owner_id) || 0) + 1); });
-
     set("#activeCount", active.length); set("#highCount", high.length); set("#taskCount", openTasks.length); set("#ownerCount", d.commissions.filter(c => c.owner_id).length);
     set("#capacityPct", Math.round(pct*100)+"%"); if ($("#capacityBar")) $("#capacityBar").style.width = pct*100+"%";
     set("#committed", h(committed)+"h"); set("#free", h(Math.max(0,totalCap-committed))+"h"); set("#freePreview", h(Math.max(0,totalCap-committed))+"h");
